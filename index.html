@@ -345,6 +345,7 @@
         </div>
         <button class="btn-secondary" id="btnAddSdx" style="white-space:nowrap;">+ เพิ่มเข้ารายการ</button>
       </div>
+      <div id="sdxPreview"></div>
       <div id="sdxList"></div>
       <div id="sdxEmpty" class="empty" style="padding:24px 16px;"><div class="big">➕</div>ยังไม่ได้เพิ่มโรคร่วม/โรคแทรก (ถ้าไม่มีให้ข้ามได้)</div>
     </div>
@@ -763,6 +764,17 @@ function refreshSdxAddOptions(){
 let sdxList = []; // { uid, diseaseId, status:{CC,PE,Lab,Tx}, evidence:{dxdoc,dxtiming,severity:[]}, labPass:null|bool }
 let sdxSeq = 0;
 
+document.getElementById('sdx_add_select').addEventListener('change', (e)=>{
+  const wrap = document.getElementById('sdxPreview');
+  const d = DISEASES.find(x=>x.Disease_ID===e.target.value);
+  if(!d){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = `
+    <div style="margin-top:12px; padding:2px 2px 0; border-top:1px dashed var(--line);">
+      <div style="font-size:12px; font-weight:700; color:#7A8286; margin:10px 0 4px;">เกณฑ์ของโรคนี้ (ดูก่อนเพิ่ม)</div>
+      ${criteriaClipHtml(d)}
+    </div>`;
+});
+
 document.getElementById('btnAddSdx').addEventListener('click', ()=>{
   const sel = document.getElementById('sdx_add_select');
   const diseaseId = sel.value;
@@ -772,6 +784,7 @@ document.getElementById('btnAddSdx').addEventListener('click', ()=>{
   const uid = 'sdx' + (++sdxSeq);
   sdxList.push({ uid, diseaseId, status:{CC:'',PE:'',Lab:'',Tx:''}, evidence:{dxdoc:'',dxtiming:'',severity:[]}, labPass:null, comment:'' });
   sel.value = '';
+  document.getElementById('sdxPreview').innerHTML = '';
   renderSdxList();
   refreshSdxAddOptions();
   updateSaveButton();
