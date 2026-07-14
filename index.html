@@ -233,6 +233,47 @@
     background:var(--amber-light); border:1px solid #E8CB9C; color:#7A5A1E;
     font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:14px; line-height:1.5;
   }
+
+  /* lab checker widget */
+  .lab-checker{
+    background:#EFF6F5; border:1.5px solid var(--teal); border-radius:10px;
+    padding:14px 16px; margin-top:14px;
+  }
+  .lab-checker .title{font-size:12.5px; font-weight:700; color:var(--teal-dark); margin-bottom:10px; display:flex; align-items:center; gap:6px;}
+  .lab-checker .field-row{display:flex; align-items:center; gap:8px; margin-bottom:8px;}
+  .lab-checker .field-row label{margin:0; flex:1; font-size:13px;}
+  .lab-checker .field-row input{width:110px; padding:8px 10px; font-size:14px; border:1.5px solid var(--line); border-radius:7px; text-align:right;}
+  .lab-checker .verdict{
+    margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px; font-weight:600; line-height:1.5; display:none;
+  }
+  .lab-checker .verdict.pass{background:var(--green-light); color:var(--green); display:block;}
+  .lab-checker .verdict.fail{background:var(--red-light); color:var(--red); display:block;}
+
+  /* step number badges */
+  .step-num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border-radius:50%; background:var(--teal); color:#fff;
+    font-size:12px; font-weight:700; margin-right:2px;
+  }
+  .step-num.small{width:18px; height:18px; font-size:10.5px;}
+
+  /* Sdx cards */
+  #sdxList{margin-top:14px;}
+  .sdx-card{
+    border:1.5px solid var(--teal); border-radius:10px; padding:14px; margin-bottom:14px;
+    background:#FBFAF6;
+  }
+  .sdx-card-header{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;
+  }
+  .sdx-card-header .sdx-title{font-weight:700; font-size:14.5px; color:var(--teal-dark);}
+  .sdx-remove{
+    background:none; border:1.5px solid var(--red); color:var(--red); border-radius:7px;
+    padding:4px 10px; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .sdx-step3-label{
+    font-size:12px; font-weight:700; color:#7A8286; margin-bottom:8px; display:flex; align-items:center; gap:6px;
+  }
   .spinner{
     width:18px; height:18px; border:2.5px solid rgba(255,255,255,.4); border-top-color:#fff;
     border-radius:50%; display:inline-block; animation:spin .7s linear infinite; vertical-align:-3px;
@@ -286,14 +327,42 @@
     </div>
 
     <div class="card">
-      <h2>เลือกโรคที่ตรวจ <span class="tag" id="diseaseCount">0 รายการ</span></h2>
-      <select id="f_disease">
-        <option value="">— เลือกโรค —</option>
+      <h2><span class="step-num">1</span> โรคหลัก (Principal Diagnosis) <span class="tag" id="diseaseCount">0 รายการ</span></h2>
+      <select id="pdx_disease">
+        <option value="">— เลือกโรคหลัก —</option>
       </select>
+      <div id="pdxCriteriaDisplay"></div>
+    </div>
 
-      <div id="criteriaDisplay"></div>
+    <div class="card">
+      <h2><span class="step-num">2</span> โรคร่วม / โรคแทรก (Comorbidity / Complication) <span class="tag" id="sdxCount">0 รายการ</span></h2>
+      <div class="row2" style="align-items:flex-end;">
+        <div>
+          <label>เลือกโรคร่วม/โรคแทรกที่จะเพิ่ม</label>
+          <select id="sdx_add_select">
+            <option value="">— เลือกโรค —</option>
+          </select>
+        </div>
+        <button class="btn-secondary" id="btnAddSdx" style="white-space:nowrap;">+ เพิ่มเข้ารายการ</button>
+      </div>
+      <div id="sdxList"></div>
+      <div id="sdxEmpty" class="empty" style="padding:24px 16px;"><div class="big">➕</div>ยังไม่ได้เพิ่มโรคร่วม/โรคแทรก (ถ้าไม่มีให้ข้ามได้)</div>
+    </div>
 
-      <div class="status-grid" id="statusGrid" style="display:none;">
+    <button class="btn-primary" id="btnSaveAudit" disabled>บันทึกผลการตรวจทั้งหมด</button>
+  </section>
+
+  <!-- template สำหรับ Sdx card หนึ่งใบ (โคลนด้วย JS) -->
+  <template id="sdxCardTemplate">
+    <div class="sdx-card">
+      <div class="sdx-card-header">
+        <span class="sdx-title"></span>
+        <button class="sdx-remove" type="button">ลบ ✕</button>
+      </div>
+      <div class="sdx-step3-label"><span class="step-num small">3</span> สิ่งที่ต้องมี (สำหรับโรคนี้)</div>
+      <div class="sdx-criteria criteria-clip"></div>
+      <div class="sdx-lab-checker"></div>
+      <div class="status-grid sdx-status-grid">
         <div class="status-row">
           <div class="lbl">CC</div>
           <div class="btn-set" data-field="CC">
@@ -327,13 +396,10 @@
           </div>
         </div>
       </div>
-
-      <div class="result-banner pending" id="resultBanner" style="display:none;">
-        <span id="resultText">รอผลการตรวจ</span>
-        <span class="result-toggle" id="resultToggle">สลับผลด้วยตนเอง</span>
+      <div class="result-banner pending sdx-result-banner">
+        <span class="sdx-result-text">รอผลการตรวจ</span>
       </div>
-
-      <div class="criteria-clip" id="codingEvidenceWrap" style="display:none; background:#fff; border-color:var(--line);">
+      <div class="criteria-clip sdx-coding-evidence" style="background:#fff; border-color:var(--line);">
         <div class="icd" style="color:var(--teal-dark);">หลักฐานสนับสนุนการให้รหัส (Coding Evidence)</div>
         <label style="margin-top:8px;">แพทย์บันทึกวินิจฉัยนี้ไว้ชัดเจนหรือไม่?</label>
         <div class="btn-set" data-field="dxdoc">
@@ -344,27 +410,23 @@
         <div class="btn-set" data-field="dxtiming">
           <div class="btn-opt" data-val="ก่อน admit (Comorbidity)">ก่อน admit</div>
           <div class="btn-opt" data-val="หลัง admit (Complication)">หลัง admit</div>
-          <div class="btn-opt" data-val="เป็นโรคหลัก (Principal)">เป็นโรคหลัก</div>
         </div>
         <label>หลักฐานความรุนแรง/ผลต่อทรัพยากร (เลือกได้มากกว่า 1)</label>
-        <div class="btn-set" id="severityEvidenceSet" style="flex-wrap:wrap;">
+        <div class="btn-set sdx-severity-set" style="flex-wrap:wrap;">
           <div class="btn-opt sev-opt" data-val="เพิ่มความเสี่ยงต่อชีวิต" style="flex:none; min-width:44%;">เพิ่มความเสี่ยงต่อชีวิต</div>
           <div class="btn-opt sev-opt" data-val="มีการตรวจเพิ่มเติมเฉพาะภาวะนี้" style="flex:none; min-width:44%;">มีตรวจเพิ่มเฉพาะภาวะนี้</div>
           <div class="btn-opt sev-opt" data-val="มีการรักษา/ปรับยาเฉพาะภาวะนี้" style="flex:none; min-width:44%;">มีรักษา/ปรับยาเฉพาะภาวะนี้</div>
           <div class="btn-opt sev-opt" data-val="ใช้ทรัพยากรเพิ่มเทียบเท่านอนเพิ่ม 1 วัน" style="flex:none; min-width:44%;">ใช้ทรัพยากรเพิ่ม ≥1 วันนอน</div>
           <div class="btn-opt sev-opt" data-val="ไม่มีข้อใดเลย" style="flex:none; min-width:44%; border-color:var(--red);">ไม่มีข้อใดเลย</div>
         </div>
-        <div id="codingRiskBanner" style="display:none; margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px; font-weight:600;"></div>
+        <div class="sdx-coding-risk-banner" style="display:none; margin-top:10px; padding:10px 12px; border-radius:8px; font-size:13px; font-weight:600;"></div>
       </div>
-
-      <div id="commentWrap" style="display:none;">
+      <div>
         <label>รายละเอียดที่ขาด / หมายเหตุ</label>
-        <textarea id="f_comment" placeholder='เช่น "ขาดบันทึกเวลาที่เริ่มให้ยาปฏิชีวนะใบแรก"'></textarea>
+        <textarea class="sdx-comment" placeholder='เช่น "ขาดบันทึกเวลาที่เริ่มให้ยาปฏิชีวนะใบแรก"'></textarea>
       </div>
-
-      <button class="btn-primary" id="btnSaveAudit" disabled>บันทึกผลการตรวจ</button>
     </div>
-  </section>
+  </template>
 
   <!-- ===================== VIEW: HISTORY ===================== -->
   <section class="view" id="view-history">
@@ -514,279 +576,378 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyDe1VaWcSYfLumfZGA55dr
 
 let DISEASES = [];
 let AUDITS = [];
-let currentStatus = { CC:'', PE:'', Lab:'', Tx:'' };
-let manualResult = null; // null = auto, 'pass' | 'fail' = manual override
-
-// ---------- utilities ----------
-function toast(msg, isErr){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.toggle('err', !!isErr);
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2400);
-}
-
-async function api(action, extra){
-  if(!API_URL || API_URL.indexOf('PASTE_') === 0){
-    document.getElementById('configBanner').style.display='block';
-    throw new Error('API_URL ยังไม่ได้ตั้งค่า');
-  }
-  const body = Object.assign({ action }, extra || {});
-  const res = await fetch(API_URL, {
-    method:'POST',
-    headers:{ 'Content-Type':'text/plain;charset=utf-8' }, // avoids CORS preflight to Apps Script
-    body: JSON.stringify(body)
-  });
-  const json = await res.json();
-  if(!json.ok) throw new Error(json.error || 'เกิดข้อผิดพลาด');
-  return json.data;
-}
-
-// ---------- tab navigation ----------
-document.querySelectorAll('.tab-btn').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(btn.dataset.view).classList.add('active');
-    if(btn.dataset.view === 'view-history') renderHistory();
-    if(btn.dataset.view === 'view-dashboard') loadDashboard();
-    if(btn.dataset.view === 'view-mra') loadMRA();
-    if(btn.dataset.view === 'view-principles') loadPrinciples();
-  });
-});
-
 // ---------- load diseases ----------
 async function loadDiseases(){
   try{
     DISEASES = await api('getDiseases');
   }catch(e){ toast(e.message, true); DISEASES = []; }
-  const sel = document.getElementById('f_disease');
-  sel.innerHTML = '<option value="">— เลือกโรค —</option>' +
+  const opts = '<option value="">— เลือกโรคหลัก —</option>' +
     DISEASES.map(d=>`<option value="${d.Disease_ID}">${d.Disease_Name}</option>`).join('');
+  document.getElementById('pdx_disease').innerHTML = opts;
   document.getElementById('diseaseCount').textContent = DISEASES.length + ' รายการ';
+  refreshSdxAddOptions();
   renderDiseaseList();
   renderDiseaseFilter();
 }
-
-document.getElementById('f_disease').addEventListener('change', (e)=>{
-  const id = e.target.value;
-  const d = DISEASES.find(x=>x.Disease_ID===id);
-  currentStatus = { CC:'', PE:'', Lab:'', Tx:'' };
-  manualResult = null;
-  codingEvidence = { dxdoc:'', dxtiming:'', severity:[] };
-  document.querySelectorAll('#statusGrid .btn-opt, #codingEvidenceWrap .btn-opt').forEach(b=>b.classList.remove('on-pass','on-fail','on-na'));
-  document.getElementById('codingRiskBanner').style.display = 'none';
-  if(!d){
-    document.getElementById('criteriaDisplay').innerHTML = '';
-    document.getElementById('statusGrid').style.display='none';
-    document.getElementById('resultBanner').style.display='none';
-    document.getElementById('codingEvidenceWrap').style.display='none';
-    document.getElementById('commentWrap').style.display='none';
-    updateSaveButton();
-    return;
-  }
-  document.getElementById('criteriaDisplay').innerHTML = `
-    <div class="criteria-clip">
-      <div class="icd">ICD-10: ${d.ICD10_Code || '-'}</div>
-      <div class="criteria-block"><div class="k">Chief Complaint</div><div class="v">${escapeHtml(d.Criteria_CC)}</div></div>
-      <div class="criteria-block"><div class="k">Physical Exam</div><div class="v">${escapeHtml(d.Criteria_PE)}</div></div>
-      <div class="criteria-block"><div class="k">Lab</div><div class="v">${escapeHtml(d.Criteria_Lab)}</div></div>
-      <div class="criteria-block"><div class="k">Treatment</div><div class="v">${escapeHtml(d.Criteria_Tx)}</div></div>
-    </div>`;
-  document.getElementById('statusGrid').style.display='grid';
-  document.getElementById('codingEvidenceWrap').style.display='block';
-  updateResultBanner();
-  updateSaveButton();
-});
 
 function escapeHtml(s){
   return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ---------- status buttons ----------
-document.querySelectorAll('#statusGrid .btn-set').forEach(set=>{
-  const field = set.dataset.field;
-  set.querySelectorAll('.btn-opt').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      set.querySelectorAll('.btn-opt').forEach(b=>b.classList.remove('on-pass','on-fail','on-na'));
-      const val = btn.dataset.val;
-      currentStatus[field] = val;
-      if(val==='ครบถ้วน') btn.classList.add('on-pass');
-      else if(val==='ไม่ครบ') btn.classList.add('on-fail');
-      else btn.classList.add('on-na');
-      manualResult = null;
-      updateResultBanner();
-      updateSaveButton();
-    });
-  });
-});
+function criteriaInnerHtml(d){
+  return `
+      <div class="icd">ICD-10: ${d.ICD10_Code || '-'}</div>
+      <div class="criteria-block"><div class="k">Chief Complaint</div><div class="v">${escapeHtml(d.Criteria_CC)}</div></div>
+      <div class="criteria-block"><div class="k">Physical Exam</div><div class="v">${escapeHtml(d.Criteria_PE)}</div></div>
+      <div class="criteria-block"><div class="k">Lab</div><div class="v">${escapeHtml(d.Criteria_Lab)}</div></div>
+      <div class="criteria-block"><div class="k">Treatment</div><div class="v">${escapeHtml(d.Criteria_Tx)}</div></div>`;
+}
 
-// ---------- coding evidence buttons ----------
-let codingEvidence = { dxdoc:'', dxtiming:'', severity:[] };
+function criteriaClipHtml(d){
+  return `<div class="criteria-clip">${criteriaInnerHtml(d)}</div>`;
+}
 
-document.querySelectorAll('#codingEvidenceWrap .btn-set[data-field]').forEach(set=>{
-  const field = set.dataset.field;
-  set.querySelectorAll('.btn-opt').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      set.querySelectorAll('.btn-opt').forEach(b=>b.classList.remove('on-pass','on-fail','on-na'));
-      const val = btn.dataset.val;
-      codingEvidence[field] = val;
-      btn.classList.add(field==='dxdoc' && val==='ไม่มี' ? 'on-fail' : 'on-pass');
-      updateCodingRisk();
-      updateSaveButton();
-    });
-  });
-});
-
-document.querySelectorAll('#severityEvidenceSet .sev-opt').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    const val = btn.dataset.val;
-    if(val === 'ไม่มีข้อใดเลย'){
-      // selecting "none" clears all other selections
-      codingEvidence.severity = codingEvidence.severity.includes(val) ? [] : [val];
-    } else {
-      codingEvidence.severity = codingEvidence.severity.filter(v=>v!=='ไม่มีข้อใดเลย');
-      const idx = codingEvidence.severity.indexOf(val);
-      if(idx>-1) codingEvidence.severity.splice(idx,1);
-      else codingEvidence.severity.push(val);
+// ---------- lab value auto-checker (แก้ปัญหา "ใส่ Hypok ได้ไหม ค่า K เท่าไร") ----------
+const LAB_THRESHOLD_RULES = {
+  'Hyperkalemia (โพแทสเซียมในเลือดสูง)': {
+    fields: [{ id:'k', label:'ค่า Potassium (K+)', unit:'mEq/L', step:'0.1' }],
+    check: (v) => {
+      const k = v.k;
+      if (k === null || isNaN(k)) return null;
+      if (k > 5.5) {
+        let level = k >= 7.0 ? 'Severe' : (k >= 6.0 ? 'Moderate' : 'Mild');
+        return { pass:true, text:`K = ${k} mEq/L (> 5.5) เข้าเกณฑ์ Hyperkalemia ระดับ ${level} — ต้องมีวินิจฉัยแพทย์ + การรักษาที่เหมาะสม (หรือตรวจซ้ำใน 24 ชม.) จึงให้รหัสได้` };
+      }
+      return { pass:false, text:`K = ${k} mEq/L ไม่เข้าเกณฑ์ Hyperkalemia (ต้อง > 5.5 mEq/L ตามเกณฑ์การให้รหัส ไม่ใช่เกณฑ์คลินิกทั่วไปที่ >5.0) — ห้ามให้รหัสนี้` };
     }
-    document.querySelectorAll('#severityEvidenceSet .sev-opt').forEach(b=>{
-      const active = codingEvidence.severity.includes(b.dataset.val);
-      b.classList.toggle('on-fail', active && b.dataset.val==='ไม่มีข้อใดเลย');
-      b.classList.toggle('on-pass', active && b.dataset.val!=='ไม่มีข้อใดเลย');
+  },
+  'Hypokalemia (โพแทสเซียมในเลือดต่ำ)': {
+    fields: [{ id:'k', label:'ค่า Potassium (K+)', unit:'mEq/L', step:'0.1' }],
+    check: (v) => {
+      const k = v.k;
+      if (k === null || isNaN(k)) return null;
+      if (k < 3.5) {
+        const note = k < 2.5 ? '' : ' — ถ้าเป็นอาการของโรคอื่น (เช่นท้องเสีย) ต้องเป็น severe (<2.5)+มีการรักษา จึงสรุปแยกได้';
+        return { pass:true, text:`K = ${k} mEq/L (< 3.5) เข้าเกณฑ์ Hypokalemia — ต้องมีวินิจฉัยแพทย์ + การรักษา (หรือตรวจซ้ำใน 24 ชม. ถ้าไม่รักษา) จึงให้รหัสได้${note}` };
+      }
+      return { pass:false, text:`K = ${k} mEq/L ไม่เข้าเกณฑ์ Hypokalemia (ต้อง < 3.5 mEq/L) — ห้ามให้รหัสนี้` };
+    }
+  },
+  'Thrombocytopenia (เกล็ดเลือดต่ำ)': {
+    fields: [{ id:'plt', label:'Platelet count', unit:'/µL', step:'1000' }],
+    check: (v) => {
+      const plt = v.plt;
+      if (plt === null || isNaN(plt)) return null;
+      if (plt < 150000) {
+        const risk = plt < 50000 ? ' (เสี่ยงเลือดออกเอง ควรพิจารณาให้เกล็ดเลือด)' : '';
+        return { pass:true, text:`Platelet = ${plt.toLocaleString()}/µL (< 150,000) เข้าเกณฑ์ Thrombocytopenia${risk}` };
+      }
+      return { pass:false, text:`Platelet = ${plt.toLocaleString()}/µL ไม่เข้าเกณฑ์ (ต้อง < 150,000/µL) — ห้ามให้รหัสนี้` };
+    }
+  },
+  'Diabetic Ketoacidosis (ภาวะเลือดเป็นกรดจากเบาหวาน)': {
+    fields: [
+      { id:'glucose', label:'Glucose', unit:'mg/dL', step:'1' },
+      { id:'ph', label:'Arterial pH', unit:'', step:'0.01' },
+      { id:'hco3', label:'HCO3', unit:'mEq/L', step:'0.1' }
+    ],
+    check: (v) => {
+      if ([v.glucose, v.ph, v.hco3].some(x => x===null || isNaN(x))) return null;
+      const okGlucose = v.glucose > 250;
+      const okPh = v.ph < 7.3;
+      const okHco3 = v.hco3 < 18;
+      const passCount = [okGlucose, okPh, okHco3].filter(Boolean).length;
+      const detail = `Glucose ${v.glucose} (${okGlucose?'✓':'✗'} ต้อง>250), pH ${v.ph} (${okPh?'✓':'✗'} ต้อง<7.3), HCO3 ${v.hco3} (${okHco3?'✓':'✗'} ต้อง<18)`;
+      if (passCount === 3) return { pass:true, text:`เข้าเกณฑ์ DKA ครบทั้ง 3 ข้อ — ${detail}` };
+      return { pass:false, text:`ไม่เข้าเกณฑ์ DKA ครบ (เข้า ${passCount}/3 ข้อ) — ${detail}` };
+    }
+  }
+};
+
+function renderLabCheckerInto(container, diseaseName, onResult){
+  const rule = LAB_THRESHOLD_RULES[diseaseName];
+  if(!rule){ container.innerHTML=''; return; }
+  container.innerHTML = `
+    <div class="lab-checker">
+      <div class="title">🧪 กรอกค่า Lab เพื่อเช็คว่าเข้าเกณฑ์การให้รหัสไหม</div>
+      ${rule.fields.map(f=>`
+        <div class="field-row">
+          <label>${f.label} ${f.unit ? '('+f.unit+')' : ''}</label>
+          <input type="number" step="${f.step}" data-labfield="${f.id}" placeholder="0">
+        </div>
+      `).join('')}
+      <div class="verdict" data-role="verdict"></div>
+    </div>`;
+  const inputs = container.querySelectorAll('[data-labfield]');
+  function runCheck(){
+    const values = {};
+    rule.fields.forEach(f=>{
+      const el = container.querySelector(`[data-labfield="${f.id}"]`);
+      values[f.id] = el.value === '' ? null : parseFloat(el.value);
     });
-    updateCodingRisk();
-    updateSaveButton();
-  });
+    const result = rule.check(values);
+    const verdict = container.querySelector('[data-role="verdict"]');
+    if(!result){
+      verdict.className = 'verdict';
+      verdict.textContent = '';
+      if(onResult) onResult(null);
+      return;
+    }
+    verdict.className = 'verdict ' + (result.pass ? 'pass' : 'fail');
+    verdict.textContent = (result.pass ? '✅ ' : '❌ ') + result.text;
+    if(onResult) onResult(result.pass);
+  }
+  inputs.forEach(el=>el.addEventListener('input', runCheck));
+}
+
+// ---------- Pdx (ช่องที่ 1) ----------
+document.getElementById('pdx_disease').addEventListener('change', (e)=>{
+  const d = DISEASES.find(x=>x.Disease_ID===e.target.value);
+  const wrap = document.getElementById('pdxCriteriaDisplay');
+  wrap.innerHTML = d ? criteriaClipHtml(d) : '';
+  refreshSdxAddOptions();
+  updateSaveButton();
 });
 
-const PROHIBITED_STANDALONE_TERMS = ['fever','jaundice','dehydration','hypoalbumin','hypoglycemia','hyperglycemia','ascites','transaminitis','cardiomegaly','ketonuria','ไข้','ดีซ่าน','ภาวะขาดน้ำ'];
+function refreshSdxAddOptions(){
+  const pdxId = document.getElementById('pdx_disease').value;
+  const usedIds = new Set(sdxList.map(s=>s.diseaseId));
+  const sel = document.getElementById('sdx_add_select');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— เลือกโรค —</option>' +
+    DISEASES.filter(d=>d.Disease_ID!==pdxId && !usedIds.has(d.Disease_ID))
+      .map(d=>`<option value="${d.Disease_ID}">${d.Disease_Name}</option>`).join('');
+  if([...sel.options].some(o=>o.value===current)) sel.value = current;
+}
 
-function updateCodingRisk(){
-  const banner = document.getElementById('codingRiskBanner');
+// ---------- Sdx (ช่องที่ 2 + 3) ----------
+let sdxList = []; // { uid, diseaseId, status:{CC,PE,Lab,Tx}, evidence:{dxdoc,dxtiming,severity:[]}, labPass:null|bool }
+let sdxSeq = 0;
+
+document.getElementById('btnAddSdx').addEventListener('click', ()=>{
+  const sel = document.getElementById('sdx_add_select');
+  const diseaseId = sel.value;
+  if(!diseaseId){ toast('เลือกโรคที่จะเพิ่มก่อนครับ', true); return; }
+  const d = DISEASES.find(x=>x.Disease_ID===diseaseId);
+  if(!d) return;
+  const uid = 'sdx' + (++sdxSeq);
+  sdxList.push({ uid, diseaseId, status:{CC:'',PE:'',Lab:'',Tx:''}, evidence:{dxdoc:'',dxtiming:'',severity:[]}, labPass:null, comment:'' });
+  sel.value = '';
+  renderSdxList();
+  refreshSdxAddOptions();
+  updateSaveButton();
+});
+
+function renderSdxList(){
+  const listWrap = document.getElementById('sdxList');
+  const emptyWrap = document.getElementById('sdxEmpty');
+  document.getElementById('sdxCount').textContent = sdxList.length + ' รายการ';
+  emptyWrap.style.display = sdxList.length ? 'none' : 'block';
+  listWrap.innerHTML = '';
+  const tpl = document.getElementById('sdxCardTemplate');
+  sdxList.forEach((entry, idx)=>{
+    const d = DISEASES.find(x=>x.Disease_ID===entry.diseaseId);
+    if(!d) return;
+    const node = tpl.content.cloneNode(true);
+    const card = node.querySelector('.sdx-card');
+    card.dataset.uid = entry.uid;
+    card.querySelector('.sdx-title').textContent = `${idx+1}. ${d.Disease_Name}`;
+    card.querySelector('.sdx-criteria').innerHTML = criteriaInnerHtml(d);
+
+    // remove button
+    card.querySelector('.sdx-remove').addEventListener('click', ()=>{
+      sdxList = sdxList.filter(s=>s.uid!==entry.uid);
+      renderSdxList();
+      refreshSdxAddOptions();
+      updateSaveButton();
+    });
+
+    // lab checker
+    const labWrap = card.querySelector('.sdx-lab-checker');
+    renderLabCheckerInto(labWrap, d.Disease_Name, (pass)=>{
+      entry.labPass = pass;
+      if(pass !== null){
+        entry.status.Lab = pass ? 'ครบถ้วน' : 'ไม่ครบ';
+        const labSet = card.querySelector('.status-grid .btn-set[data-field="Lab"]');
+        labSet.querySelectorAll('.btn-opt').forEach(b=>{
+          b.classList.remove('on-pass','on-fail','on-na');
+          if(pass && b.dataset.val==='ครบถ้วน') b.classList.add('on-pass');
+          if(!pass && b.dataset.val==='ไม่ครบ') b.classList.add('on-fail');
+        });
+      }
+      updateSdxCardVerdict(entry, card);
+      updateSaveButton();
+    });
+
+    // status grid buttons (CC/PE/Lab/Tx)
+    card.querySelectorAll('.status-grid .btn-set').forEach(set=>{
+      const field = set.dataset.field;
+      set.querySelectorAll('.btn-opt').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          set.querySelectorAll('.btn-opt').forEach(b=>b.classList.remove('on-pass','on-fail','on-na'));
+          const val = btn.dataset.val;
+          entry.status[field] = val;
+          if(val==='ครบถ้วน') btn.classList.add('on-pass');
+          else if(val==='ไม่ครบ') btn.classList.add('on-fail');
+          else btn.classList.add('on-na');
+          updateSdxCardVerdict(entry, card);
+          updateSaveButton();
+        });
+      });
+    });
+
+    // coding evidence: dxdoc / dxtiming
+    card.querySelectorAll('.sdx-coding-evidence .btn-set[data-field]').forEach(set=>{
+      const field = set.dataset.field;
+      set.querySelectorAll('.btn-opt').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          set.querySelectorAll('.btn-opt').forEach(b=>b.classList.remove('on-pass','on-fail','on-na'));
+          const val = btn.dataset.val;
+          entry.evidence[field] = val;
+          btn.classList.add(field==='dxdoc' && val==='ไม่มี' ? 'on-fail' : 'on-pass');
+          updateSdxCardVerdict(entry, card);
+          updateSaveButton();
+        });
+      });
+    });
+
+    // severity multi-select
+    card.querySelectorAll('.sdx-severity-set .sev-opt').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const val = btn.dataset.val;
+        if(val === 'ไม่มีข้อใดเลย'){
+          entry.evidence.severity = entry.evidence.severity.includes(val) ? [] : [val];
+        } else {
+          entry.evidence.severity = entry.evidence.severity.filter(v=>v!=='ไม่มีข้อใดเลย');
+          const i = entry.evidence.severity.indexOf(val);
+          if(i>-1) entry.evidence.severity.splice(i,1);
+          else entry.evidence.severity.push(val);
+        }
+        card.querySelectorAll('.sdx-severity-set .sev-opt').forEach(b=>{
+          const active = entry.evidence.severity.includes(b.dataset.val);
+          b.classList.toggle('on-fail', active && b.dataset.val==='ไม่มีข้อใดเลย');
+          b.classList.toggle('on-pass', active && b.dataset.val!=='ไม่มีข้อใดเลย');
+        });
+        updateSdxCardVerdict(entry, card);
+        updateSaveButton();
+      });
+    });
+
+    // comment
+    card.querySelector('.sdx-comment').addEventListener('input', (e)=>{
+      entry.comment = e.target.value;
+    });
+
+    listWrap.appendChild(card);
+  });
+}
+
+function computeSdxAutoResult(entry){
+  const vals = Object.values(entry.status);
+  if(vals.some(v=>v==='')) return null;
+  return vals.some(v=>v==='ไม่ครบ') ? 'fail' : 'pass';
+}
+
+function getSdxCodingRisk(entry){
   const reasons = [];
-  if(codingEvidence.dxdoc === 'ไม่มี'){
-    reasons.push('มีแต่ผล lab/ผลตรวจ ไม่มีคำวินิจฉัยของแพทย์บันทึกไว้ — ผู้ให้รหัสห้ามตีความเองจากผลตรวจ');
-  }
-  if(codingEvidence.severity.includes('ไม่มีข้อใดเลย') || (codingEvidence.dxtiming && codingEvidence.severity.length===0)){
-    reasons.push('ไม่มีหลักฐานว่าเพิ่มความเสี่ยงต่อชีวิตหรือใช้ทรัพยากรเพิ่มขึ้น (ไม่เข้าเกณฑ์ comorbidity/complication ของสปสช.)');
-  }
-  const selId = document.getElementById('f_disease').value;
-  const selDisease = DISEASES.find(x=>x.Disease_ID===selId);
-  if(selDisease){
-    const nameLower = selDisease.Disease_Name.toLowerCase();
-    if(PROHIBITED_STANDALONE_TERMS.some(t=>nameLower.includes(t))){
-      reasons.push('ภาวะนี้อยู่ในกลุ่มที่ปกติไม่ต้องสรุปแยกหากเป็นเพียงอาการ/ผลแล็บ (ดูแท็บ "หลักการ") — ต้องมีวินิจฉัย+การรักษาเฉพาะภาวะจริงจึงจะนับได้');
-    }
-  }
-  if(reasons.length){
-    banner.style.display = 'block';
-    banner.style.background = 'var(--red-light)';
-    banner.style.color = 'var(--red)';
-    banner.innerHTML = '⚠️ เสี่ยงถูกตีกลับ:<br>' + reasons.map(r=>'• '+r).join('<br>');
-  } else if(codingEvidence.dxdoc && codingEvidence.dxtiming && codingEvidence.severity.length){
-    banner.style.display = 'block';
-    banner.style.background = 'var(--green-light)';
-    banner.style.color = 'var(--green)';
-    banner.innerHTML = '✓ มีหลักฐานสนับสนุนการให้รหัสครบถ้วน';
+  if(entry.evidence.dxdoc === 'ไม่มี') reasons.push('ไม่มีคำวินิจฉัยแพทย์ มีแต่ผล lab');
+  if(entry.evidence.severity.includes('ไม่มีข้อใดเลย')) reasons.push('ไม่มีหลักฐานความรุนแรง/การใช้ทรัพยากรเพิ่ม');
+  return { risk: reasons.length ? 'เสี่ยงถูกตีกลับ' : 'ปลอดภัย', reason: reasons.join('; ') };
+}
+
+function updateSdxCardVerdict(entry, card){
+  const resultBanner = card.querySelector('.sdx-result-banner');
+  const resultText = card.querySelector('.sdx-result-text');
+  const auto = computeSdxAutoResult(entry);
+  if(auto){
+    resultBanner.className = 'result-banner sdx-result-banner ' + auto;
+    resultText.textContent = auto==='pass' ? 'ผ่าน (Complete)' : 'ส่งคืนแก้ไข (Incomplete)';
   } else {
-    banner.style.display = 'none';
+    resultBanner.className = 'result-banner sdx-result-banner pending';
+    const answered = Object.values(entry.status).filter(v=>v!=='').length;
+    resultText.textContent = `ตอบแล้ว ${answered}/4 ข้อ`;
+  }
+  const riskBanner = card.querySelector('.sdx-coding-risk-banner');
+  const risk = getSdxCodingRisk(entry);
+  const evidenceComplete = entry.evidence.dxdoc && entry.evidence.dxtiming && entry.evidence.severity.length;
+  if(risk.reason){
+    riskBanner.style.display = 'block';
+    riskBanner.style.background = 'var(--red-light)';
+    riskBanner.style.color = 'var(--red)';
+    riskBanner.innerHTML = '⚠️ เสี่ยงถูกตีกลับ:<br>' + risk.reason.split('; ').map(r=>'• '+r).join('<br>');
+  } else if(evidenceComplete){
+    riskBanner.style.display = 'block';
+    riskBanner.style.background = 'var(--green-light)';
+    riskBanner.style.color = 'var(--green)';
+    riskBanner.innerHTML = '✓ มีหลักฐานสนับสนุนการให้รหัสครบถ้วน';
+  } else {
+    riskBanner.style.display = 'none';
   }
 }
 
-function getCodingRiskResult(){
-  const reasons = [];
-  if(codingEvidence.dxdoc === 'ไม่มี'){
-    reasons.push('ไม่มีคำวินิจฉัยแพทย์ มีแต่ผล lab');
-  }
-  if(codingEvidence.severity.includes('ไม่มีข้อใดเลย')){
-    reasons.push('ไม่มีหลักฐานความรุนแรง/การใช้ทรัพยากรเพิ่ม');
-  }
-  return {
-    risk: reasons.length ? 'เสี่ยงถูกตีกลับ' : 'ปลอดภัย',
-    reason: reasons.join('; ')
-  };
+function isSdxComplete(entry){
+  const auto = computeSdxAutoResult(entry);
+  const evidenceComplete = entry.evidence.dxdoc && entry.evidence.dxtiming && entry.evidence.severity.length;
+  return !!(auto && evidenceComplete);
 }
 
-function computeAutoResult(){
-  const vals = Object.values(currentStatus);
-  if(vals.some(v=>v==='')) return null; // not all set yet
-  const hasFail = vals.some(v=>v==='ไม่ครบ');
-  return hasFail ? 'fail' : 'pass';
-}
-
-function updateResultBanner(){
-  const banner = document.getElementById('resultBanner');
-  const text = document.getElementById('resultText');
-  const auto = computeAutoResult();
-  const effective = manualResult || auto;
-  if(!effective){
-    banner.style.display='flex';
-    banner.className = 'result-banner pending';
-    text.textContent = 'กรอกสถานะให้ครบทั้ง 4 ข้อ เพื่อสรุปผล';
-    document.getElementById('commentWrap').style.display='none';
-    return;
-  }
-  banner.style.display='flex';
-  banner.className = 'result-banner ' + effective;
-  text.textContent = (effective==='pass' ? 'ผ่าน (Complete)' : 'ส่งคืนแก้ไข (Incomplete)') + (manualResult ? ' — ปรับด้วยตนเอง' : '');
-  document.getElementById('commentWrap').style.display = effective==='fail' ? 'block' : 'block';
-}
-
-document.getElementById('resultToggle').addEventListener('click', ()=>{
-  const auto = computeAutoResult();
-  const current = manualResult || auto;
-  if(!current) return;
-  manualResult = current === 'pass' ? 'fail' : 'pass';
-  updateResultBanner();
-});
-
+// ---------- overall save ----------
 function updateSaveButton(){
-  const sel = document.getElementById('f_disease').value;
   const hn = document.getElementById('f_hn').value.trim();
   const auditor = document.getElementById('f_auditor').value.trim();
-  const auto = computeAutoResult();
-  const ceReady = codingEvidence.dxdoc && codingEvidence.dxtiming && codingEvidence.severity.length>0;
-  const ready = sel && hn && auditor && (manualResult || auto) && ceReady;
-  document.getElementById('btnSaveAudit').disabled = !ready;
+  const pdxOk = !!document.getElementById('pdx_disease').value;
+  const sdxOk = sdxList.every(isSdxComplete);
+  document.getElementById('btnSaveAudit').disabled = !(hn && auditor && pdxOk && sdxOk);
 }
 ['f_hn','f_auditor'].forEach(id=>document.getElementById(id).addEventListener('input', updateSaveButton));
 
 document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
-  const sel = document.getElementById('f_disease').value;
-  const d = DISEASES.find(x=>x.Disease_ID===sel);
-  const effective = manualResult || computeAutoResult();
-  const risk = getCodingRiskResult();
-  const payload = {
-    Auditor_Name: document.getElementById('f_auditor').value.trim(),
-    Ward: 'IPD',
-    HN: document.getElementById('f_hn').value.trim(),
-    AN: document.getElementById('f_an').value.trim(),
-    Disease_ID: sel,
-    Disease_Name: d ? d.Disease_Name : '',
-    Status_CC: currentStatus.CC,
-    Status_PE: currentStatus.PE,
-    Status_Lab: currentStatus.Lab,
-    Status_Tx: currentStatus.Tx,
-    Audit_Result: effective==='pass' ? 'ผ่าน (Complete)' : 'ส่งคืนแก้ไข (Incomplete)',
-    Comment_Detail: document.getElementById('f_comment').value.trim(),
-    Dx_Documented: codingEvidence.dxdoc,
-    Dx_Timing: codingEvidence.dxtiming,
-    Severity_Evidence: codingEvidence.severity.join(', '),
-    Coding_Risk: risk.risk,
-    Coding_Risk_Reason: risk.reason
-  };
   const btn = document.getElementById('btnSaveAudit');
+  const auditor = document.getElementById('f_auditor').value.trim();
+  const ward = 'IPD';
+  const hn = document.getElementById('f_hn').value.trim();
+  const an = document.getElementById('f_an').value.trim();
+  const pdxId = document.getElementById('pdx_disease').value;
+  const pdxDisease = DISEASES.find(x=>x.Disease_ID===pdxId);
+  const encounterId = 'ENC' + Date.now().toString(36).toUpperCase();
+
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...';
   try{
-    await api('saveAudit', { data: payload });
-    toast(risk.risk === 'เสี่ยงถูกตีกลับ' ? 'บันทึกแล้ว — แต่เคสนี้เสี่ยงถูกตีกลับ โปรดตรวจสอบ' : 'บันทึกผลการตรวจเรียบร้อย');
+    // บันทึก Pdx
+    await api('saveAudit', { data: {
+      Auditor_Name: auditor, Ward: ward, HN: hn, AN: an,
+      Disease_ID: pdxId, Disease_Name: pdxDisease ? pdxDisease.Disease_Name : '',
+      Status_CC:'', Status_PE:'', Status_Lab:'', Status_Tx:'',
+      Audit_Result: 'ผ่าน (Complete)',
+      Comment_Detail: '',
+      Dx_Documented:'', Dx_Timing:'เป็นโรคหลัก (Principal)', Severity_Evidence:'',
+      Coding_Risk:'', Coding_Risk_Reason:'',
+      Encounter_ID: encounterId, Dx_Role: 'Pdx'
+    }});
+    // บันทึกแต่ละ Sdx
+    for(const entry of sdxList){
+      const d = DISEASES.find(x=>x.Disease_ID===entry.diseaseId);
+      const effective = computeSdxAutoResult(entry);
+      const risk = getSdxCodingRisk(entry);
+      await api('saveAudit', { data: {
+        Auditor_Name: auditor, Ward: ward, HN: hn, AN: an,
+        Disease_ID: entry.diseaseId, Disease_Name: d ? d.Disease_Name : '',
+        Status_CC: entry.status.CC, Status_PE: entry.status.PE, Status_Lab: entry.status.Lab, Status_Tx: entry.status.Tx,
+        Audit_Result: effective==='pass' ? 'ผ่าน (Complete)' : 'ส่งคืนแก้ไข (Incomplete)',
+        Comment_Detail: entry.comment,
+        Dx_Documented: entry.evidence.dxdoc, Dx_Timing: entry.evidence.dxtiming,
+        Severity_Evidence: entry.evidence.severity.join(', '),
+        Coding_Risk: risk.risk, Coding_Risk_Reason: risk.reason,
+        Encounter_ID: encounterId, Dx_Role: 'Sdx'
+      }});
+    }
+    const anyRisk = sdxList.some(e=>getSdxCodingRisk(e).risk==='เสี่ยงถูกตีกลับ');
+    toast(anyRisk ? 'บันทึกแล้ว — มีโรคร่วมที่เสี่ยงถูกตีกลับ โปรดตรวจสอบ' : 'บันทึกผลการตรวจเรียบร้อย');
     resetAuditForm();
   }catch(e){
     toast(e.message, true);
   }finally{
-    btn.innerHTML = 'บันทึกผลการตรวจ';
+    btn.innerHTML = 'บันทึกผลการตรวจทั้งหมด';
     updateSaveButton();
   }
 });
@@ -794,10 +955,14 @@ document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
 function resetAuditForm(){
   document.getElementById('f_hn').value='';
   document.getElementById('f_an').value='';
-  document.getElementById('f_comment').value='';
-  document.getElementById('f_disease').value='';
-  document.getElementById('f_disease').dispatchEvent(new Event('change'));
+  document.getElementById('pdx_disease').value='';
+  document.getElementById('pdxCriteriaDisplay').innerHTML='';
+  sdxList = [];
+  renderSdxList();
+  refreshSdxAddOptions();
+  updateSaveButton();
 }
+
 
 // ---------- disease manager ----------
 document.getElementById('btnSaveDisease').addEventListener('click', async ()=>{
@@ -883,14 +1048,15 @@ async function renderHistory(){
   wrap.innerHTML = AUDITS.map((a,i)=>{
     const isPass = a.Audit_Result === 'ผ่าน (Complete)';
     const isRisk = a.Coding_Risk === 'เสี่ยงถูกตีกลับ';
+    const isPdx = a.Dx_Role === 'Pdx';
     return `
     <div class="log-item" onclick="showDetail(${i})">
       <div class="top">
         <div>
-          <div class="disease">${escapeHtml(a.Disease_Name)} ${isRisk ? '<span style="color:var(--red);">⚠️</span>' : ''}</div>
+          <div class="disease">${isPdx ? '<span style="color:var(--teal); font-weight:800;">[Pdx]</span> ' : (a.Dx_Role==='Sdx' ? '<span style="color:#9AA2A5; font-weight:700;">[Sdx]</span> ' : '')}${escapeHtml(a.Disease_Name)} ${isRisk ? '<span style="color:var(--red);">⚠️</span>' : ''}</div>
           <div class="meta">HN ${escapeHtml(a.HN)} · ${escapeHtml(a.Audit_Date)}</div>
         </div>
-        <span class="pill ${isPass?'pass':'fail'}">${isPass?'ผ่าน':'ส่งคืนแก้ไข'}</span>
+        ${isPdx ? '' : `<span class="pill ${isPass?'pass':'fail'}">${isPass?'ผ่าน':'ส่งคืนแก้ไข'}</span>`}
       </div>
     </div>`;
   }).join('');
