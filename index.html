@@ -271,24 +271,8 @@
   <section class="view active" id="view-audit">
     <div class="card">
       <h2>ข้อมูลผู้ป่วย <span class="tag">รอบตรวจใหม่</span></h2>
-      <div class="row2">
-        <div>
-          <label>วอร์ด</label>
-          <select id="f_ward">
-            <option value="Med">Med</option>
-            <option value="Surgi">Surgi</option>
-            <option value="Ortho">Ortho</option>
-            <option value="Ped">Ped</option>
-            <option value="ICU">ICU</option>
-            <option value="LR">LR</option>
-            <option value="Other">อื่นๆ</option>
-          </select>
-        </div>
-        <div>
-          <label>ผู้ตรวจ</label>
-          <input type="text" id="f_auditor" placeholder="ชื่อ-สกุล">
-        </div>
-      </div>
+      <label>ผู้ตรวจ</label>
+      <input type="text" id="f_auditor" placeholder="ชื่อ-สกุล">
       <div class="row2">
         <div>
           <label>HN</label>
@@ -387,7 +371,6 @@
     <div class="card">
       <h2>ประวัติการตรวจชาร์จ <span class="tag" id="historyCount">0 รายการ</span></h2>
       <div class="filter-bar">
-        <select id="filterWard"><option value="">ทุกวอร์ด</option></select>
         <select id="filterResult">
           <option value="">ทุกผล</option>
           <option value="ผ่าน (Complete)">ผ่าน</option>
@@ -444,24 +427,8 @@
         เกณฑ์นี้ถอดความจากคู่มือ MRA ปี 2563 ของสปสช. (คุณภาพการบันทึกเอกสาร ไม่ใช่เกณฑ์คลินิกรายโรค)
         ใช้อ้างอิงเบื้องต้น ควรตรวจทานกับคู่มือฉบับเต็มก่อนใช้ตัดสินผลจริง
       </div>
-      <div class="row2">
-        <div>
-          <label>วอร์ด</label>
-          <select id="m_ward">
-            <option value="Med">Med</option>
-            <option value="Surgi">Surgi</option>
-            <option value="Ortho">Ortho</option>
-            <option value="Ped">Ped</option>
-            <option value="ICU">ICU</option>
-            <option value="LR">LR</option>
-            <option value="Other">อื่นๆ</option>
-          </select>
-        </div>
-        <div>
-          <label>ผู้ตรวจ</label>
-          <input type="text" id="m_auditor" placeholder="ชื่อ-สกุล">
-        </div>
-      </div>
+      <label>ผู้ตรวจ</label>
+      <input type="text" id="m_auditor" placeholder="ชื่อ-สกุล">
       <div class="row2">
         <div>
           <label>HN</label>
@@ -785,7 +752,6 @@ function updateSaveButton(){
   document.getElementById('btnSaveAudit').disabled = !ready;
 }
 ['f_hn','f_auditor'].forEach(id=>document.getElementById(id).addEventListener('input', updateSaveButton));
-document.getElementById('f_ward').addEventListener('change', updateSaveButton);
 
 document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
   const sel = document.getElementById('f_disease').value;
@@ -794,7 +760,7 @@ document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
   const risk = getCodingRiskResult();
   const payload = {
     Auditor_Name: document.getElementById('f_auditor').value.trim(),
-    Ward: document.getElementById('f_ward').value,
+    Ward: 'IPD',
     HN: document.getElementById('f_hn').value.trim(),
     AN: document.getElementById('f_an').value.trim(),
     Disease_ID: sel,
@@ -895,7 +861,7 @@ function renderDiseaseFilter(){
     DISEASES.map(d=>`<option value="${d.Disease_ID}">${d.Disease_Name}</option>`).join('');
 }
 
-['filterWard','filterResult','filterDisease'].forEach(id=>{
+['filterResult','filterDisease'].forEach(id=>{
   document.getElementById(id).addEventListener('change', renderHistory);
 });
 
@@ -903,7 +869,6 @@ async function renderHistory(){
   const wrap = document.getElementById('historyList');
   wrap.innerHTML = '<div class="empty"><div class="big">⏳</div>กำลังโหลด...</div>';
   const filters = {
-    ward: document.getElementById('filterWard').value,
     result: document.getElementById('filterResult').value,
     diseaseId: document.getElementById('filterDisease').value
   };
@@ -923,22 +888,13 @@ async function renderHistory(){
       <div class="top">
         <div>
           <div class="disease">${escapeHtml(a.Disease_Name)} ${isRisk ? '<span style="color:var(--red);">⚠️</span>' : ''}</div>
-          <div class="meta">${escapeHtml(a.Ward)} · HN ${escapeHtml(a.HN)} · ${escapeHtml(a.Audit_Date)}</div>
+          <div class="meta">HN ${escapeHtml(a.HN)} · ${escapeHtml(a.Audit_Date)}</div>
         </div>
         <span class="pill ${isPass?'pass':'fail'}">${isPass?'ผ่าน':'ส่งคืนแก้ไข'}</span>
       </div>
     </div>`;
   }).join('');
 }
-
-// populate ward filter options from static list (matches audit form)
-(function initWardFilter(){
-  const wards = ['Med','Surgi','Ortho','Ped','ICU','LR','Other'];
-  const sel = document.getElementById('filterWard');
-  wards.forEach(w=>{
-    const o = document.createElement('option'); o.value=w; o.textContent=w; sel.appendChild(o);
-  });
-})();
 
 window.showDetail = function(i){
   const a = AUDITS[i];
@@ -1121,7 +1077,7 @@ document.getElementById('btnSaveMRA').addEventListener('click', async ()=>{
   const pct = full > 0 ? Math.round(sum/full*100) : 0;
   const payload = {
     Auditor_Name: document.getElementById('m_auditor').value.trim(),
-    Ward: document.getElementById('m_ward').value,
+    Ward: 'IPD',
     HN: document.getElementById('m_hn').value.trim(),
     AN: document.getElementById('m_an').value.trim(),
     Content_No: no,
