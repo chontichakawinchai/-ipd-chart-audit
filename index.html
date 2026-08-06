@@ -257,6 +257,31 @@
   }
   .step-num.small{width:18px; height:18px; font-size:10.5px;}
 
+  /* searchable select widget */
+  .searchable-select{ position:relative; }
+  .searchable-select .ss-input{
+    width:100%; padding:10px 12px; font-size:15px; font-family:inherit;
+    border:1.5px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink);
+  }
+  .searchable-select .ss-input:focus{ outline:none; border-color:var(--teal); background:#fff; }
+  .searchable-select .ss-list{
+    display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:40;
+    background:#fff; border:1.5px solid var(--teal); border-radius:9px;
+    max-height:280px; overflow-y:auto; box-shadow:0 6px 18px rgba(28,43,51,.18);
+  }
+  .searchable-select .ss-item{
+    padding:10px 12px; font-size:14px; cursor:pointer; border-bottom:1px solid var(--paper-2);
+    display:flex; align-items:baseline; gap:8px;
+  }
+  .searchable-select .ss-item:last-child{ border-bottom:none; }
+  .searchable-select .ss-item:hover, .searchable-select .ss-item.ss-active{ background:var(--teal-light); }
+  .searchable-select .ss-item .ss-abbr{
+    flex:none; font-size:10.5px; font-weight:700; color:var(--teal-dark);
+    background:var(--teal-light); border-radius:5px; padding:1px 6px;
+  }
+  .searchable-select .ss-item .ss-name{ flex:1; line-height:1.4; }
+  .searchable-select .ss-empty{ padding:14px 12px; font-size:13px; color:#9AA2A5; text-align:center; }
+
   /* Sdx cards */
   #sdxList{margin-top:14px;}
   .sdx-card{
@@ -328,9 +353,10 @@
 
     <div class="card">
       <h2><span class="step-num">1</span> โรคหลัก (Principal Diagnosis) <span class="tag" id="diseaseCount">0 รายการ</span></h2>
-      <select id="pdx_disease">
-        <option value="">— เลือกโรคหลัก —</option>
-      </select>
+      <div class="searchable-select" id="pdxSelectWrap">
+        <input type="text" class="ss-input" id="pdxSelectInput" placeholder="พิมพ์ค้นหาโรคหลัก... (ชื่อโรค หรือ ตัวย่อ)" autocomplete="off">
+        <div class="ss-list" id="pdxSelectList"></div>
+      </div>
       <div id="pdxCriteriaDisplay"></div>
     </div>
 
@@ -339,9 +365,10 @@
       <div class="row2" style="align-items:flex-end;">
         <div>
           <label>เลือกโรคร่วม/โรคแทรกที่จะเพิ่ม</label>
-          <select id="sdx_add_select">
-            <option value="">— เลือกโรค —</option>
-          </select>
+          <div class="searchable-select" id="sdxSelectWrap">
+            <input type="text" class="ss-input" id="sdxSelectInput" placeholder="พิมพ์ค้นหาโรค..." autocomplete="off">
+            <div class="ss-list" id="sdxSelectList"></div>
+          </div>
         </div>
         <button class="btn-secondary" id="btnAddSdx" style="white-space:nowrap;">+ เพิ่มเข้ารายการ</button>
       </div>
@@ -617,15 +644,59 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   });
 });
 // ---------- load diseases ----------
+// ---------- ตัวย่อโรค (สำหรับค้นหา/แสดงในดรอปดาวน์) ----------
+const DISEASE_ABBR = {
+  'Sepsis (ภาวะติดเชื้อในกระแสเลือด)': 'Sepsis',
+  'Severe Community-Acquired Pneumonia (ปอดอักเสบรุนแรง)': 'Severe CAP',
+  'Acute Kidney Injury (ไตวายเฉียบพลัน)': 'AKI',
+  'Acute Decompensated Heart Failure (หัวใจล้มเหลวเฉียบพลัน)': 'CHF',
+  'COPD with Acute Exacerbation (ซีโอพีดีกำเริบเฉียบพลัน)': 'COPD',
+  'Acute Ischemic Stroke (สมองขาดเลือดเฉียบพลัน)': 'CVA/Stroke',
+  'Diabetic Ketoacidosis (ภาวะเลือดเป็นกรดจากเบาหวาน)': 'DKA',
+  'GI Bleeding / Upper GI Bleeding (เลือดออกทางเดินอาหาร)': 'UGIB',
+  'Peptic Ulcer Disease - Gastric/Duodenal Ulcer (แผลในกระเพาะอาหาร/ลำไส้เล็กส่วนต้น)': 'PUD',
+  'Acute Pancreatitis (ตับอ่อนอักเสบเฉียบพลัน)': 'Pancreatitis',
+  'Cirrhosis of Liver (ตับแข็ง)': 'Cirrhosis',
+  'Dengue Fever / Dengue Haemorrhagic Fever (ไข้เลือดออก)': 'Dengue/DHF',
+  'Acute Diarrhoea / Gastroenteritis with Dehydration (ท้องเสียเฉียบพลัน/กระเพาะลำไส้อักเสบ)': 'AGE',
+  'Cellulitis / Skin and Soft Tissue Infection (เนื้อเยื่ออ่อนอักเสบติดเชื้อ)': 'Cellulitis',
+  'Acute Coronary Syndrome (กลุ่มอาการหลอดเลือดหัวใจเฉียบพลัน)': 'ACS',
+  'Asthma / Acute Severe Asthma (หืด/หืดกำเริบเฉียบพลันรุนแรง)': 'Asthma',
+  'Acute Respiratory Failure (ระบบหายใจล้มเหลวเฉียบพลัน)': 'ARF',
+  'Traumatic Brain Injury (บาดเจ็บที่ศีรษะ)': 'TBI',
+  'Hypokalemia (โพแทสเซียมในเลือดต่ำ)': 'Hypo K',
+  'Hyperkalemia (โพแทสเซียมในเลือดสูง)': 'Hyper K',
+  'Thrombocytopenia (เกล็ดเลือดต่ำ)': 'Thrombocytopenia',
+  'Chronic Kidney Disease (ไตวายเรื้อรัง)': 'CKD',
+  'Bacterial Pneumonia (ปอดอักเสบจากเชื้อแบคทีเรีย)': 'Pneumonia',
+  'Urinary Tract Infection / Pyelonephritis (ติดเชื้อทางเดินปัสสาวะ)': 'UTI',
+  'Alcohol Withdrawal (ภาวะถอนสุรา)': 'AWS',
+  'Acute Alcohol Intoxication (ภาวะเมาสุราเฉียบพลัน)': 'Alcohol intox.',
+  'Convulsion/Seizure/Epilepsy (อาการชัก/โรคลมชัก)': 'Seizure',
+  'Transient Ischaemic Attack (TIA) - สมองขาดเลือดชั่วคราว': 'TIA',
+  'Atrial Fibrillation / Atrial Flutter (หัวใจเต้นผิดจังหวะ AF)': 'AF',
+  'Cardiac Arrest (ภาวะหัวใจหยุดเต้น)': 'Arrest',
+  'Deep Vein Thrombosis / Venous Thrombosis (ลิ่มเลือดในหลอดเลือดดำ)': 'DVT',
+  'Snake Bite (งูกัด)': 'Snake bite',
+  'Wound Infection / Post-traumatic Wound Infection (แผลติดเชื้อ)': 'Wound infection',
+  'Acute Appendicitis (ไส้ติ่งอักเสบเฉียบพลัน)': 'Appendicitis',
+  'Pulmonary Tuberculosis (วัณโรคปอด)': 'TB',
+  'Poisoning / Adverse Effect of Drugs (พิษจากยา/ผลไม่พึงประสงค์)': 'Poisoning',
+  'Gangrene (เนื้อตายเน่า)': 'Gangrene',
+  'Syncope and Collapse (เป็นลมหมดสติชั่วคราว)': 'Syncope',
+  'Febrile Convulsion (ชักจากไข้สูงในเด็ก)': 'Febrile seizure',
+  'Shock (ภาวะช็อก ทั่วไป/Cardiogenic/Hypovolemic)': 'Shock',
+  'Malignancy - หลักการให้รหัสมะเร็ง (รับ Refer มารักษาต่อเนื่อง)': 'CA (coding)',
+  'Malignancy Complications (ภาวะแทรกซ้อนจากมะเร็ง/เคมีบำบัด)': 'CA complications'
+};
+
 async function loadDiseases(){
   try{
     DISEASES = await api('getDiseases');
   }catch(e){ toast(e.message, true); DISEASES = []; }
-  const opts = '<option value="">— เลือกโรคหลัก —</option>' +
-    DISEASES.map(d=>`<option value="${d.Disease_ID}">${d.Disease_Name}</option>`).join('');
-  document.getElementById('pdx_disease').innerHTML = opts;
+  DISEASES.sort((a,b)=>a.Disease_Name.localeCompare(b.Disease_Name, 'en'));
   document.getElementById('diseaseCount').textContent = DISEASES.length + ' รายการ';
-  refreshSdxAddOptions();
+  ssPdx.refresh(); ssSdx.refresh();
   renderDiseaseList();
   renderDiseaseFilter();
 }
@@ -740,53 +811,95 @@ function renderLabCheckerInto(container, diseaseName, onResult){
   inputs.forEach(el=>el.addEventListener('input', runCheck));
 }
 
-// ---------- Pdx (ช่องที่ 1) ----------
-document.getElementById('pdx_disease').addEventListener('change', (e)=>{
-  const d = DISEASES.find(x=>x.Disease_ID===e.target.value);
-  const wrap = document.getElementById('pdxCriteriaDisplay');
-  wrap.innerHTML = d ? criteriaClipHtml(d) : '';
-  refreshSdxAddOptions();
-  updateSaveButton();
-});
-
-function refreshSdxAddOptions(){
-  const pdxId = document.getElementById('pdx_disease').value;
-  const usedIds = new Set(sdxList.map(s=>s.diseaseId));
-  const sel = document.getElementById('sdx_add_select');
-  const current = sel.value;
-  sel.innerHTML = '<option value="">— เลือกโรค —</option>' +
-    DISEASES.filter(d=>d.Disease_ID!==pdxId && !usedIds.has(d.Disease_ID))
-      .map(d=>`<option value="${d.Disease_ID}">${d.Disease_Name}</option>`).join('');
-  if([...sel.options].some(o=>o.value===current)) sel.value = current;
+// ---------- searchable dropdown (พิมพ์ค้นหาโรค + เรียงตัวอักษร + ตัวย่อ) ----------
+function createSearchableSelect(inputEl, listEl, getOptionsFn, onSelect){
+  let selectedId = null;
+  function optionHtml(d){
+    const abbr = DISEASE_ABBR[d.Disease_Name];
+    return `<div class="ss-item" data-id="${d.Disease_ID}">${abbr ? `<span class="ss-abbr">${escapeHtml(abbr)}</span>` : ''}<span class="ss-name">${escapeHtml(d.Disease_Name)}</span></div>`;
+  }
+  function open(filterText){
+    const filter = (filterText||'').trim().toLowerCase();
+    const all = getOptionsFn();
+    const filtered = filter ? all.filter(d=>{
+      const abbr = (DISEASE_ABBR[d.Disease_Name]||'').toLowerCase();
+      return d.Disease_Name.toLowerCase().includes(filter) || abbr.includes(filter);
+    }) : all;
+    listEl.innerHTML = filtered.length ? filtered.map(optionHtml).join('') : '<div class="ss-empty">ไม่พบโรคที่ตรงกัน</div>';
+    listEl.style.display = 'block';
+  }
+  inputEl.addEventListener('focus', ()=>open(inputEl.value===selectedLabel() ? '' : inputEl.value));
+  inputEl.addEventListener('input', ()=>{ selectedId=null; open(inputEl.value); });
+  function selectedLabel(){
+    const d = getOptionsFn().find(x=>x.Disease_ID===selectedId) || DISEASES.find(x=>x.Disease_ID===selectedId);
+    return d ? d.Disease_Name : '';
+  }
+  listEl.addEventListener('mousedown', (e)=>{
+    const item = e.target.closest('.ss-item');
+    if(!item) return;
+    e.preventDefault();
+    const id = item.dataset.id;
+    const d = DISEASES.find(x=>x.Disease_ID===id);
+    if(!d) return;
+    selectedId = id;
+    inputEl.value = d.Disease_Name;
+    listEl.style.display = 'none';
+    if(onSelect) onSelect(id, d);
+  });
+  document.addEventListener('click', (e)=>{
+    if(e.target!==inputEl && !listEl.contains(e.target)) listEl.style.display='none';
+  });
+  return {
+    clear(){ selectedId=null; inputEl.value=''; listEl.style.display='none'; },
+    getSelectedId(){ return selectedId; },
+    refresh(){ /* no-op: options are computed live from DISEASES on each open */ }
+  };
 }
+
+// ---------- Pdx (ช่องที่ 1) ----------
+const ssPdx = createSearchableSelect(
+  document.getElementById('pdxSelectInput'),
+  document.getElementById('pdxSelectList'),
+  ()=>DISEASES,
+  (id, d)=>{
+    document.getElementById('pdxCriteriaDisplay').innerHTML = criteriaClipHtml(d);
+    ssSdx.clear();
+    document.getElementById('sdxPreview').innerHTML = '';
+    updateSaveButton();
+  }
+);
 
 // ---------- Sdx (ช่องที่ 2 + 3) ----------
 let sdxList = []; // { uid, diseaseId, status:{CC,PE,Lab,Tx}, evidence:{dxdoc,dxtiming,severity:[]}, labPass:null|bool }
 let sdxSeq = 0;
 
-document.getElementById('sdx_add_select').addEventListener('change', (e)=>{
-  const wrap = document.getElementById('sdxPreview');
-  const d = DISEASES.find(x=>x.Disease_ID===e.target.value);
-  if(!d){ wrap.innerHTML=''; return; }
-  wrap.innerHTML = `
-    <div style="margin-top:12px; padding:2px 2px 0; border-top:1px dashed var(--line);">
-      <div style="font-size:12px; font-weight:700; color:#7A8286; margin:10px 0 4px;">เกณฑ์ของโรคนี้ (ดูก่อนเพิ่ม)</div>
-      ${criteriaClipHtml(d)}
-    </div>`;
-});
+const ssSdx = createSearchableSelect(
+  document.getElementById('sdxSelectInput'),
+  document.getElementById('sdxSelectList'),
+  ()=>{
+    const pdxId = ssPdx.getSelectedId();
+    const usedIds = new Set(sdxList.map(s=>s.diseaseId));
+    return DISEASES.filter(d=>d.Disease_ID!==pdxId && !usedIds.has(d.Disease_ID));
+  },
+  (id, d)=>{
+    document.getElementById('sdxPreview').innerHTML = `
+      <div style="margin-top:12px; padding:2px 2px 0; border-top:1px dashed var(--line);">
+        <div style="font-size:12px; font-weight:700; color:#7A8286; margin:10px 0 4px;">เกณฑ์ของโรคนี้ (ดูก่อนเพิ่ม)</div>
+        ${criteriaClipHtml(d)}
+      </div>`;
+  }
+);
 
 document.getElementById('btnAddSdx').addEventListener('click', ()=>{
-  const sel = document.getElementById('sdx_add_select');
-  const diseaseId = sel.value;
-  if(!diseaseId){ toast('เลือกโรคที่จะเพิ่มก่อนครับ', true); return; }
+  const diseaseId = ssSdx.getSelectedId();
+  if(!diseaseId){ toast('เลือกโรคที่จะเพิ่มก่อนครับ (พิมพ์ค้นหาแล้วกดเลือกจากลิสต์)', true); return; }
   const d = DISEASES.find(x=>x.Disease_ID===diseaseId);
   if(!d) return;
   const uid = 'sdx' + (++sdxSeq);
   sdxList.push({ uid, diseaseId, status:{CC:'',PE:'',Lab:'',Tx:''}, evidence:{dxdoc:'',dxtiming:'',severity:[]}, labPass:null, comment:'' });
-  sel.value = '';
+  ssSdx.clear();
   document.getElementById('sdxPreview').innerHTML = '';
   renderSdxList();
-  refreshSdxAddOptions();
   updateSaveButton();
 });
 
@@ -810,7 +923,6 @@ function renderSdxList(){
     card.querySelector('.sdx-remove').addEventListener('click', ()=>{
       sdxList = sdxList.filter(s=>s.uid!==entry.uid);
       renderSdxList();
-      refreshSdxAddOptions();
       updateSaveButton();
     });
 
@@ -947,7 +1059,7 @@ function isSdxComplete(entry){
 function updateSaveButton(){
   const hn = document.getElementById('f_hn').value.trim();
   const auditor = document.getElementById('f_auditor').value.trim();
-  const pdxOk = !!document.getElementById('pdx_disease').value;
+  const pdxOk = !!ssPdx.getSelectedId();
   const sdxOk = sdxList.every(isSdxComplete);
   document.getElementById('btnSaveAudit').disabled = !(hn && auditor && pdxOk && sdxOk);
 }
@@ -959,7 +1071,7 @@ document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
   const ward = 'IPD';
   const hn = document.getElementById('f_hn').value.trim();
   const an = document.getElementById('f_an').value.trim();
-  const pdxId = document.getElementById('pdx_disease').value;
+  const pdxId = ssPdx.getSelectedId();
   const pdxDisease = DISEASES.find(x=>x.Disease_ID===pdxId);
   const encounterId = 'ENC' + Date.now().toString(36).toUpperCase();
 
@@ -1007,11 +1119,12 @@ document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
 function resetAuditForm(){
   document.getElementById('f_hn').value='';
   document.getElementById('f_an').value='';
-  document.getElementById('pdx_disease').value='';
+  ssPdx.clear();
   document.getElementById('pdxCriteriaDisplay').innerHTML='';
+  ssSdx.clear();
+  document.getElementById('sdxPreview').innerHTML='';
   sdxList = [];
   renderSdxList();
-  refreshSdxAddOptions();
   updateSaveButton();
 }
 
