@@ -2,6 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>ตรวจชาร์จผู้ป่วยใน</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -388,7 +389,7 @@
 <header class="topbar">
   <div class="eyebrow">IPD · Hang Chat Hospital</div>
   <h1 id="pageTitle">ตรวจสอบชาร์จผู้ป่วยใน</h1>
-  <div class="sub" id="pageSub">เลือกโรค ดูเกณฑ์ ติ๊กผ่าน/ไม่ผ่าน บันทึกลงชีทอัตโนมัติ</div>
+  <div class="sub" id="pageSub">เลือกโรค ดูเกณฑ์ ติ๊กผ่าน/ไม่ผ่าน บันทึกลงชีทอัตโนมัติ <span style="opacity:.6; font-size:11px; margin-left:6px;">v2026-10-06e</span></div>
 </header>
 
 <main>
@@ -2364,11 +2365,24 @@ function renderLookup(){
   }
   const words = raw.toLowerCase().split(/\s+/).map(normSearch).filter(Boolean);
   const whole = normSearch(raw);
+  // จัดอันดับ: ตรงชื่อ/ตัวย่อ/รหัส > คำค้นที่ตั้งไว้ > สรุป/หมายเหตุ > เนื้อหาเกณฑ์
   const scored = DISEASES.map(d=>{
-    const nameKey = normSearch(d.Disease_Name + ' ' + (DISEASE_ABBR[d.Disease_Name]||'') + ' ' + d.ICD10_Code);
-    const hay = lookupHaystack(d);
-    if(!(hay.includes(whole) || words.every(w=>hay.includes(w)))) return null;
-    const score = (nameKey.includes(whole) ? 0 : 1);   // ตรงชื่อ/ตัวย่อ/รหัส ขึ้นก่อน
+    const cl = CHECKLIST[d.Disease_Name];
+    const tiers = [
+      normSearch(d.Disease_Name + ' ' + (DISEASE_ABBR[d.Disease_Name]||'') + ' ' + d.ICD10_Code),
+      normSearch(cl ? cl.kw : ''),
+      normSearch(cl ? (cl.summary + ' ' + cl.note) : ''),
+      lookupHaystack(d)
+    ];
+    const tierOf = (w)=> tiers.findIndex(t=>t.includes(w));
+    let score;
+    const wholeTier = tierOf(whole);
+    if(wholeTier > -1) score = wholeTier;
+    else {
+      const ts = words.map(tierOf);
+      if(ts.some(t=>t<0)) return null;
+      score = 4 + Math.max(...ts);
+    }
     return { d, score };
   }).filter(Boolean).sort((a,b)=>a.score-b.score);
   const hits = scored.slice(0, 8).map(x=>x.d);
