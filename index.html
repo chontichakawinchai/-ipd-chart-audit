@@ -24,7 +24,7 @@
     --shadow: 0 2px 10px rgba(28,43,51,0.08);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0; overflow-x:hidden;}
   body{
     font-family:'Sarabun',sans-serif;
     background:var(--paper);
@@ -197,8 +197,9 @@
   .pill.pass{background:var(--green-light); color:var(--green);}
   .pill.fail{background:var(--red-light); color:var(--red);}
 
-  .filter-bar{display:flex; gap:8px; margin-bottom:12px; overflow-x:auto; padding-bottom:2px;}
+  .filter-bar{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;}
   .filter-bar select{width:auto; flex:none; font-size:13px; padding:7px 10px;}
+  .filter-bar #filterDisease{flex:1 1 180px; min-width:0;}
 
   .empty{
     text-align:center; padding:40px 16px; color:#9AA2A5;
@@ -256,14 +257,14 @@
       box-shadow:2px 0 10px rgba(28,43,51,0.06);
     }
     nav.tabbar button{
-      flex-direction:row; justify-content:flex-start; gap:10px;
+      flex:none; flex-direction:row; justify-content:flex-start; gap:10px;
       padding:13px 20px; font-size:13.5px; border-radius:0;
     }
     nav.tabbar button .ic{font-size:18px;}
     nav.tabbar button.active{ background:var(--teal-light); }
     nav.tabbar button.active .ic{ transform:none; }
     header.topbar{ margin-left:200px; }
-    main{ margin-left:200px; max-width:820px; }
+    main{ margin-left:200px; max-width:none; padding:20px 28px 32px; }
   }
 
   .toast{
