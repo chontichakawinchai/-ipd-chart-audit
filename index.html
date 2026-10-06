@@ -155,6 +155,18 @@
   }
   .cl-item.checked span{color:var(--ink);}
   .cl-item:not(.checked) span{color:#7A8286;}
+  .cl-summary{
+    font-size:14px; font-weight:700; color:var(--teal-dark); background:#fff;
+    border-left:4px solid var(--teal); padding:8px 10px; border-radius:4px; margin:6px 0 4px; line-height:1.5;
+  }
+  .cl-note{
+    margin-top:12px; font-size:12.5px; line-height:1.6; color:#7A5A1E;
+    background:#fff; border:1px dashed #E8CB9C; border-radius:6px; padding:8px 10px;
+  }
+  .lookup-card{ border:1.5px solid var(--teal); border-radius:10px; padding:12px 14px; margin-top:12px; background:#FBFAF6; }
+  .lookup-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .lookup-name{ font-weight:700; font-size:14.5px; line-height:1.5; }
+  .lookup-code{ flex:none; font-size:18px; font-weight:600; color:#fff; background:var(--teal); padding:4px 10px; border-radius:7px; }
   .cl-na-toggle{
     margin-top:6px; font-size:11.5px; font-weight:600; color:var(--teal); cursor:pointer;
     text-decoration:underline; display:inline-block;
@@ -498,7 +510,21 @@
   <!-- ===================== VIEW: DISEASES ===================== -->
   <section class="view" id="view-diseases">
     <div class="card">
-      <h2>เพิ่มเกณฑ์โรคใหม่</h2>
+      <h2>🔍 ค้นหาโรค <span class="tag">ใส่รหัสอะไร · ต้องมีอะไรถึง Dx ได้</span></h2>
+      <input type="text" id="lookupInput" placeholder="พิมพ์ชื่อโรค ตัวย่อ หรือรหัส เช่น hypo k, dka, E87.6, ไตวาย" autocomplete="off">
+      <div id="lookupResults"></div>
+    </div>
+
+    <div class="card">
+      <h2>โรคที่มีอยู่ในระบบ <span class="tag" id="diseaseListCount">0 รายการ</span></h2>
+      <div id="dupBanner"></div>
+      <div id="diseaseList"></div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary style="cursor:pointer; font-size:15px; font-weight:700; color:var(--teal-dark);">➕ เพิ่มเกณฑ์โรคใหม่ (กดเพื่อเปิด)</summary>
+        <div style="margin-top:12px;">
       <label>รหัส ICD-10</label>
       <input type="text" id="d_icd" placeholder="เช่น A41.9">
       <label>ชื่อโรค</label>
@@ -512,11 +538,8 @@
       <label>เกณฑ์ Tx (การรักษา/พยาบาล)</label>
       <textarea id="d_tx" placeholder="- บันทึกการให้ IV Fluid&#10;- บันทึกการให้ Antibiotic ภายใน 1 ชม."></textarea>
       <button class="btn-primary" id="btnSaveDisease">บันทึกเกณฑ์โรค</button>
-    </div>
-
-    <div class="card">
-      <h2>โรคที่มีอยู่ในระบบ <span class="tag" id="diseaseListCount">0 รายการ</span></h2>
-      <div id="diseaseList"></div>
+        </div>
+      </details>
     </div>
   </section>
 
@@ -626,6 +649,7 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbzGXlJOlFhDehWtHub3OD26iKluC1dLkRZT3_noeelMDdF8f7HY4MGjKFBA83D8WFO_/exec';
 
 let DISEASES = [];
+let DUP_COUNT = 0;
 let AUDITS = [];
 
 // ---------- utilities ----------
@@ -713,15 +737,488 @@ const DISEASE_ABBR = {
   'Malignancy Complications (ภาวะแทรกซ้อนจากมะเร็ง/เคมีบำบัด)': 'CA complications'
 };
 
+// ---------- เกณฑ์แบบย่อ: "ต้องมีอะไรบ้าง" ต่อโรค (ติ๊กได้) ----------
+// G(หมวด, จำนวนขั้นต่ำ [0 = ต้องครบทุกข้อ], [รายการ], หัวข้อ)
+function G(cat, min, items, title){ return { cat, min, items, title: title || '' }; }
+const CHECKLIST = {
+  'Sepsis (ภาวะติดเชื้อในกระแสเลือด)': {
+    summary: 'SIRS ≥2 ข้อ + ติดเชื้อ + Hemoculture ขึ้นเชื้อ + ได้ยาปฏิชีวนะครบ',
+    groups: [
+      G('PE', 2, ['ไข้ >38.0 หรือ <36.0 °C', 'HR >90', 'RR >24 หรือ PaCO2 <32', 'WBC >12,000 หรือ <4,000 หรือ band >10%'], 'SIRS'),
+      G('CC', 0, ['แพทย์บันทึกว่าสงสัย/วินิจฉัยการติดเชื้อ']),
+      G('Lab', 0, ['Hemoculture (final) ขึ้นเชื้อ — ยกเว้นผู้ป่วยภูมิต้านทานต่ำที่หาแหล่งติดเชื้อไม่พบ']),
+      G('Tx', 0, ['ได้ยาปฏิชีวนะที่เหมาะสม ประมาณ 5-7 วัน', 'อาการดีขึ้นใน 3-5 วัน หรือเสียชีวิต'])
+    ],
+    note: 'พบแหล่งติดเชื้อ (เช่น pneumonia) → โรคนั้นเป็น PDx, Sepsis เป็น SDx · มี Sepsis แล้วไม่ต้องให้ SIRS (R65.0) ซ้ำ'
+  },
+  'Severe Community-Acquired Pneumonia (ปอดอักเสบรุนแรง)': {
+    summary: 'อาการปอดอักเสบ + CXR พบ infiltrate ใหม่ + CURB-65 ≥3',
+    groups: [
+      G('CC', 1, ['ไข้', 'ไอ / มีเสมหะ', 'หายใจเหนื่อย']),
+      G('PE', 3, ['สับสน (Confusion)', 'BUN >19 mg/dL', 'RR ≥30', 'SBP <90 หรือ DBP ≤60', 'อายุ ≥65 ปี'], 'CURB-65'),
+      G('Lab', 0, ['CXR พบ infiltrate ใหม่']),
+      G('Tx', 0, ['ได้ยาปฏิชีวนะ', 'ได้ออกซิเจนตามเป้า SpO2'])
+    ],
+    note: 'เกณฑ์นี้เป็นความรู้ทั่วไป ยังไม่ได้ยืนยันจากคู่มือ Coding Audit'
+  },
+  'Acute Kidney Injury (ไตวายเฉียบพลัน)': {
+    summary: 'Creatinine เพิ่มตามเกณฑ์ KDIGO และไม่ใช่แค่ Prerenal',
+    groups: [
+      G('Lab', 1, ['Cr เพิ่ม ≥0.3 mg/dL ภายใน 48 ชม.', 'Cr ≥1.5 เท่าของค่าเดิม ภายใน 7 วัน', 'ปัสสาวะ <0.5 mL/kg/hr นานกว่า 6 ชม.'], 'KDIGO'),
+      G('PE', 0, ['ไตไม่ได้ดีขึ้นเร็วภายใน 1-2 วันหลังให้น้ำ (ถ้าดีขึ้นเร็ว = Prerenal)']),
+      G('Tx', 1, ['หยุดยาที่เป็นพิษต่อไต', 'ปรับสารน้ำ + บันทึก I/O'])
+    ],
+    note: 'ดีขึ้นเร็วหลังแก้ภาวะขาดน้ำ = Prerenal azotemia (R39.2) ไม่ใช่ N17'
+  },
+  'Acute Decompensated Heart Failure (หัวใจล้มเหลวเฉียบพลัน)': {
+    summary: 'อาการ + ตรวจพบน้ำเกิน + ผลตรวจสนับสนุน + ได้ยาขับปัสสาวะ',
+    groups: [
+      G('CC', 1, ['หอบเหนื่อย', 'นอนราบไม่ได้ (orthopnea)', 'ตื่นมาหอบตอนกลางคืน (PND)', 'ขาบวม']),
+      G('PE', 1, ['ฟังปอดพบ crepitation', 'JVP สูง', 'บวมกดบุ๋ม', 'S3 gallop']),
+      G('Lab', 1, ['CXR พบ congestion / หัวใจโต', 'BNP / NT-proBNP สูง', 'Echo พบ EF ผิดปกติ']),
+      G('Tx', 0, ['ได้ยาขับปัสสาวะทางหลอดเลือด'])
+    ],
+    note: 'มี HT มานาน + HF → ใช้ I11.0 ไม่ต้องให้ I50 ซ้ำ · มี HF แล้วไม่ใช้ J81 (pulmonary edema)'
+  },
+  'COPD with Acute Exacerbation (ซีโอพีดีกำเริบเฉียบพลัน)': {
+    summary: 'มีหลักฐานว่าเป็น COPD จริง + อาการกำเริบ + ได้ยาพ่น',
+    groups: [
+      G('CC', 1, ['ไอ / เสมหะมากขึ้น', 'หอบเหนื่อยมากขึ้น']),
+      G('PE', 1, ['Wheezing', 'ใช้กล้ามเนื้อช่วยหายใจ']),
+      G('Lab', 1, ['มีประวัติรักษา COPD ต่อเนื่องในเวชระเบียน', 'Spirometry FEV1/FVC <70%', 'CXR เข้าได้กับ COPD'], 'หลักฐานว่าเป็น COPD'),
+      G('Tx', 1, ['ยาขยายหลอดลมพ่น', 'Steroid', 'O2 เป้า SpO2 88-92%'])
+    ],
+    note: 'COPD + pneumonia ทั่วไป → J44.0 (PDx) + J18.x · COPD + สำลัก → J69.0 เป็น PDx'
+  },
+  'Acute Ischemic Stroke (สมองขาดเลือดเฉียบพลัน)': {
+    summary: 'อาการทางประสาทเฉียบพลัน + เวลาเริ่มมีอาการ + ทำ CT/MRI',
+    groups: [
+      G('CC', 0, ['อาการทางประสาทเฉียบพลัน (อ่อนแรงครึ่งซีก / ปากเบี้ยว / พูดไม่ชัด)', 'บันทึกเวลาเริ่มมีอาการ']),
+      G('PE', 0, ['บันทึกการตรวจ neuro deficit หรือ NIHSS']),
+      G('Lab', 0, ['ได้ทำ CT / MRI brain']),
+      G('Tx', 1, ['ประเมิน rtPA / ส่งต่อ', 'Monitor neuro signs'])
+    ],
+    note: 'ไม่ได้ทำ CT/MRI → ใช้ I64 ไม่ใช่ I63 · มีประวัติ CVA ไม่มี deficit เหลือ → Z86.7'
+  },
+  'Diabetic Ketoacidosis (ภาวะเลือดเป็นกรดจากเบาหวาน)': {
+    summary: 'Glucose >250 + pH <7.3 + HCO3 <18 + Ketone บวก',
+    groups: [
+      G('CC', 1, ['คลื่นไส้ / อาเจียน', 'ปวดท้อง', 'หายใจหอบลึก', 'ซึมลง']),
+      G('Lab', 0, ['Glucose >250 mg/dL', 'pH <7.3', 'HCO3 <18', 'Ketone บวก']),
+      G('Tx', 0, ['ได้ IV fluid', 'ได้ Insulin drip', 'Monitor K / น้ำตาล'])
+    ],
+    note: 'DKA (.1) + โรคแทรกเรื้อรัง → ให้รหัสแยก ไม่รวมเป็น .7'
+  },
+  'GI Bleeding / Upper GI Bleeding (เลือดออกทางเดินอาหาร)': {
+    summary: 'มีเลือดออกชัดเจน + ตรวจ Hb/Hct + ได้รักษา',
+    groups: [
+      G('CC', 1, ['อาเจียนเป็นเลือด / coffee ground', 'ถ่ายดำ / ถ่ายเป็นเลือด']),
+      G('PE', 1, ['PR พบถ่ายดำ', 'ซีด', 'BP ต่ำ / HR เร็ว']),
+      G('Lab', 0, ['ตรวจ Hb / Hct']),
+      G('Tx', 1, ['ให้สารน้ำ / ให้เลือด', 'PPI ทางหลอดเลือด', 'ส่องกล้อง / ส่งต่อ'])
+    ],
+    note: 'อาเจียนเป็นเลือด → K92.0 · ถ่ายดำอย่างเดียว → K92.1 · มีทั้งคู่ → K92.0 · ห้ามให้ซ้ำกับรหัสแผลที่ระบุเลือดออกแล้ว'
+  },
+  'Peptic Ulcer Disease - Gastric/Duodenal Ulcer (แผลในกระเพาะอาหาร/ลำไส้เล็กส่วนต้น)': {
+    summary: 'ต้องส่องกล้อง / Upper GI study ยืนยันแผล',
+    groups: [
+      G('CC', 0, ['ปวดลิ้นปี่ สัมพันธ์กับมื้ออาหาร']),
+      G('Lab', 0, ['EGD / Upper GI study ยืนยันแผลและตำแหน่ง', 'ระบุ acute/chronic และมี/ไม่มี เลือดออก/ทะลุ']),
+      G('Tx', 1, ['PPI', 'กำจัด H. pylori', 'ผ่าตัด / ส่งต่อ (กรณีทะลุ)'])
+    ],
+    note: 'ไม่ได้ส่องกล้อง → ใช้ Dyspepsia ไม่ใช่ PUD · พบ H. pylori เพิ่ม B98.0'
+  },
+  'Acute Pancreatitis (ตับอ่อนอักเสบเฉียบพลัน)': {
+    summary: 'ต้องมี 2 ใน 3 ข้อ + ระบุสาเหตุ',
+    groups: [
+      G('Lab', 2, ['ปวดท้องส่วนบน + กดเจ็บแบบ peritonitis', 'Amylase / Lipase สูง ≥3 เท่า', 'CT / MRI พบ pancreatitis (รังสีแพทย์อ่าน)'], '2 ใน 3 ข้อ'),
+      G('CC', 0, ['แพทย์ระบุสาเหตุ (นิ่ว / สุรา / ยา / ไม่ทราบ)']),
+      G('Tx', 0, ['NPO + IV fluid'])
+    ],
+    note: 'ไม่เข้าเกณฑ์ 2 ใน 3 → สรุปเป็น R10.- (ปวดท้อง)'
+  },
+  'Cirrhosis of Liver (ตับแข็ง)': {
+    summary: 'อาการแสดงของตับแข็ง ≥3 ข้อ (หรือมีผล LFT/ภาพถ่ายสนับสนุน)',
+    groups: [
+      G('PE', 3, ['ตัวเหลืองตาเหลือง', 'Spider nevi', 'ฝ่ามือแดง', 'เต้านมโต (ชาย) / อัณฑะฝ่อ', 'ท้องมาน / บวม', 'ม้ามโต / varices / caput medusa', 'Flapping tremor', 'LFT ผิดปกติ (albumin ต่ำ, PT ยาว)', 'U/S / CT: ตับเล็ก ม้ามโต'], 'อาการแสดง / ผลตรวจ'),
+      G('Tx', 1, ['รักษาภาวะแทรกซ้อน (ท้องมาน / varices / ซึม)', 'งดสุรา'])
+    ],
+    note: 'มีท้องมานไม่ต้องให้ R18 เพิ่ม (ยกเว้นเจาะท้อง) · ต้องให้ coagulation factor → เพิ่ม D68.4'
+  },
+  'Dengue Fever / Dengue Haemorrhagic Fever (ไข้เลือดออก)': {
+    summary: 'อาการ + CBC เข้าได้ + มีผลยืนยันเชื้อ + ระบุระดับตาม WHO 2016',
+    groups: [
+      G('CC', 1, ['ไข้', 'ปวดศีรษะ / ปวดกล้ามเนื้อ', 'ผื่น / จุดเลือดออก / tourniquet test บวก']),
+      G('Lab', 0, ['CBC: WBC ต่ำ / เกล็ดเลือดต่ำ']),
+      G('Lab', 1, ['NS1 Ag บวก', 'Dengue IgM / IgG บวก', 'PCR บวก'], 'ผลยืนยันเชื้อ'),
+      G('PE', 0, ['แพทย์ระบุระดับ: without warning / with warning / severe']),
+      G('Tx', 0, ['IV fluid ตามระยะโรค', 'Monitor Hct / V/S / ปัสสาวะ'])
+    ],
+    note: 'ไม่ต้องให้รหัส ไข้ / เกล็ดเลือดต่ำ / ตับโต แยก (ยกเว้นรุนแรงจนต้องให้เกล็ดเลือด)'
+  },
+  'Acute Diarrhoea / Gastroenteritis with Dehydration (ท้องเสียเฉียบพลัน/กระเพาะลำไส้อักเสบ)': {
+    summary: 'ถ่ายเหลวบ่อย + ให้สารน้ำทดแทน',
+    groups: [
+      G('CC', 1, ['ถ่ายเหลวบ่อย', 'อาเจียน']),
+      G('Tx', 0, ['ให้สารน้ำทดแทน'])
+    ],
+    note: 'อุจจาระไม่พบอะไร → A09.0 · พบเม็ดเลือดขาว → A04.9 · เพาะเชื้อขึ้น → ตามเชื้อ · Dehydration / K ต่ำ / Na ต่ำ ไม่ให้รหัสแยก (ยกเว้น Na <125 หรือ K <2.5 + รักษา)'
+  },
+  'Cellulitis / Skin and Soft Tissue Infection (เนื้อเยื่ออ่อนอักเสบติดเชื้อ)': {
+    summary: 'ผิวหนังบวมแดงร้อนกดเจ็บ + ได้ยาปฏิชีวนะ',
+    groups: [
+      G('PE', 0, ['บวม แดง ร้อน กดเจ็บ บริเวณผิวหนัง']),
+      G('Tx', 0, ['ได้ยาปฏิชีวนะ'])
+    ],
+    note: 'เกณฑ์นี้เป็นความรู้ทั่วไป · ลุกลามเป็น necrotizing fasciitis → M72.6'
+  },
+  'Acute Coronary Syndrome (กลุ่มอาการหลอดเลือดหัวใจเฉียบพลัน)': {
+    summary: 'เจ็บหน้าอก (ระบุนาน) + EKG + Troponin',
+    groups: [
+      G('CC', 0, ['เจ็บแน่นหน้าอก และบันทึกระยะเวลา (MI ต้อง >20 นาที)']),
+      G('Lab', 0, ['EKG', 'Troponin / CK-MB']),
+      G('Tx', 1, ['Antiplatelet', 'Anticoagulant', 'ยาละลายลิ่มเลือด / ส่งต่อ PCI'])
+    ],
+    note: 'STEMI = ST ยก + Trop สูง · NSTEMI = ST ไม่ยก + Trop สูง · Unstable angina = Trop ปกติ'
+  },
+  'Asthma / Acute Severe Asthma (หืด/หืดกำเริบเฉียบพลันรุนแรง)': {
+    summary: 'หอบ + ฟังพบ wheeze + ได้ยาพ่น',
+    groups: [
+      G('CC', 1, ['หอบเหนื่อย / แน่นหน้าอก', 'หายใจมีเสียงหวีด']),
+      G('PE', 0, ['ฟังปอดพบ wheeze']),
+      G('Tx', 1, ['ยาขยายหลอดลมพ่น', 'Steroid'])
+    ],
+    note: 'Acute severe asthma → J46 · ไม่ระบุชนิด → J45.9'
+  },
+  'Acute Respiratory Failure (ระบบหายใจล้มเหลวเฉียบพลัน)': {
+    summary: 'ต้องครบ 3 ข้อ: อาการทางสมอง + ค่าออกซิเจน + ใส่ท่อช่วยหายใจ',
+    groups: [
+      G('CC', 1, ['ซึม / สับสน / หมดสติ / ชัก', 'Cyanosis']),
+      G('Lab', 1, ['PaO2 <55 หรือ PaCO2 >45', 'SpO2 <90% (ถ้าไม่มี ABG)']),
+      G('Tx', 0, ['ใส่ท่อ + เครื่องช่วยหายใจ หรือ bag (กรณี refer)'])
+    ],
+    note: 'NIV ผ่าน mask ไม่นับ · รับ refer มาพร้อมท่อแล้วถอดได้ใน day 1 → ไม่ให้ J96.0'
+  },
+  'Traumatic Brain Injury (บาดเจ็บที่ศีรษะ)': {
+    summary: 'ประวัติกระแทกศีรษะ + บันทึก GCS/pupil ซ้ำ',
+    groups: [
+      G('CC', 0, ['ประวัติแรงกระแทกที่ศีรษะ']),
+      G('PE', 0, ['บันทึก GCS + pupil ซ้ำตามเวลา']),
+      G('Tx', 0, ['Neuro observation ตามความถี่'])
+    ],
+    note: 'เกณฑ์นี้เป็นความรู้ทั่วไป · อย่าลืม external cause (กลไก + สถานที่ + กิจกรรม)'
+  },
+  'Hypokalemia (โพแทสเซียมในเลือดต่ำ)': {
+    summary: 'K <3.5 + (รักษา หรือ ตรวจซ้ำใน 24 ชม. ยังต่ำ)',
+    groups: [
+      G('Lab', 0, ['K <3.5 mEq/L']),
+      G('Tx', 1, ['ได้ K ทดแทน', 'ตรวจซ้ำใน 24 ชม. ยังต่ำ'])
+    ],
+    note: 'ถ้าเป็นอาการของท้องเสีย/อาเจียน → ต้อง K <2.5 + รักษา จึงให้รหัสแยกได้'
+  },
+  'Hyperkalemia (โพแทสเซียมในเลือดสูง)': {
+    summary: 'K >5.5 + (รักษา หรือ ตรวจซ้ำใน 24 ชม. ยังสูง)',
+    groups: [
+      G('Lab', 0, ['K >5.5 mEq/L (ไม่ใช่ >5.0)']),
+      G('Tx', 1, ['ได้รักษา K สูง', 'ตรวจซ้ำใน 24 ชม. ยังสูง'])
+    ],
+    note: 'ถ้าเป็นอาการของ CKD → ให้รหัสแยกเฉพาะมี EKG เปลี่ยนแปลง'
+  },
+  'Thrombocytopenia (เกล็ดเลือดต่ำ)': {
+    summary: 'Platelet <150,000 + มีการดูแลเฉพาะภาวะนี้',
+    groups: [
+      G('Lab', 0, ['Platelet <150,000/µL']),
+      G('Tx', 1, ['หาสาเหตุ / หยุดยาที่สงสัย', 'ให้เกล็ดเลือด', 'Monitor เลือดออก'])
+    ],
+    note: 'Pancytopenia ไม่มีผลไขกระดูก → D64.9 + D70 + D69.6 (ไม่ใช่ aplastic) · รู้สาเหตุ เช่น hypersplenism → D73.1'
+  },
+  'Chronic Kidney Disease (ไตวายเรื้อรัง)': {
+    summary: 'eGFR <60 นาน ≥3 เดือน + มีผล Cr/eGFR ครั้งนี้',
+    groups: [
+      G('Lab', 0, ['eGFR <60 นาน ≥3 เดือน (หรือมีหลักฐานไตเสียหาย ≥3 เดือน)', 'มีผล Cr / eGFR ในเวชระเบียนครั้งนี้']),
+      G('PE', 0, ['ขณะวินิจฉัย stage ไม่มี prerenal / ช็อก'])
+    ],
+    note: 'K สูง / acidosis / Na ต่ำ ของ CKD ไม่ให้รหัสแยก (ยกเว้น K มี EKG เปลี่ยน, fluid overload, uremic encephalopathy) · ซีดจาก CKD → D63.8 เฉพาะ stage ≥3'
+  },
+  'Bacterial Pneumonia (ปอดอักเสบจากเชื้อแบคทีเรีย)': {
+    summary: 'อาการ ≥3 ใน 5 + เป็นมา <2 สัปดาห์ + CXR infiltrate ใหม่',
+    groups: [
+      G('CC', 3, ['ไข้ >38.3 °C', 'ไอ ± เสมหะ', 'หอบเหนื่อย', 'เจ็บหน้าอกเวลาหายใจ', 'ฟังปอดพบ crackles'], 'อาการ'),
+      G('CC', 0, ['เป็นมาไม่เกิน 2 สัปดาห์']),
+      G('Lab', 0, ['CXR พบ infiltrate ใหม่']),
+      G('Lab', 1, ['Gram stain เสมหะที่เก็บถูกต้อง พบเชื้อ', 'เพาะเชื้อขึ้น และแพทย์ระบุว่าเป็นตัวก่อโรค'], 'ใช้คำว่า "bacterial" ได้เมื่อ'),
+      G('Tx', 0, ['ได้ยาปฏิชีวนะ'])
+    ],
+    note: 'ไม่มีผลเชื้อ → สรุปตามภาพ CXR (bronchopneumonia / lobar) แทน · ติดในโรงพยาบาล → เพิ่ม Y95'
+  },
+  'Urinary Tract Infection / Pyelonephritis (ติดเชื้อทางเดินปัสสาวะ)': {
+    summary: 'UA พบ WBC + แบคทีเรีย + อาการตามชนิด + ได้ยาปฏิชีวนะ',
+    groups: [
+      G('Lab', 0, ['UA: WBC >5/HPF (ชาย) หรือ >10/HPF (หญิง)', 'UA พบแบคทีเรีย']),
+      G('PE', 1, ['Pyelonephritis: ไข้ หนาวสั่น ± เคาะเจ็บสีข้าง', 'Cystitis: แสบขัด ถ่ายบ่อย ปวดเหนือหัวเหน่า'], 'อาการ (ระบุชนิด)'),
+      G('Tx', 0, ['ได้ยาปฏิชีวนะ'])
+    ],
+    note: 'UTI / pyelo + นิ่วไต → ใช้ N20.0 รหัสเดียว'
+  },
+  'Alcohol Withdrawal (ภาวะถอนสุรา)': {
+    summary: 'ดื่มใน 1 เดือน + อาการหลังหยุดดื่ม 12-72 ชม. ≥2 อาการ + ได้ยา',
+    groups: [
+      G('CC', 0, ['ดื่มสุราภายใน 1 เดือน', 'อาการเริ่มหลังหยุด / ลดดื่ม 12-72 ชม.']),
+      G('PE', 2, ['มือสั่น', 'ใจสั่น / HR >100', 'เหงื่อออก', 'คลื่นไส้ / อาเจียน', 'หงุดหงิด / วิตกกังวล', 'นอนไม่หลับ', 'หูแว่ว / ภาพหลอน / ชัก'], 'อาการถอน'),
+      G('Tx', 1, ['Vitamin B1', 'Benzodiazepine'])
+    ],
+    note: 'มีสับสน + ไม่รู้วันเวลาสถานที่ → F10.4 · ชักในบริบทนี้ไม่ให้ R56 แยก'
+  },
+  'Acute Alcohol Intoxication (ภาวะเมาสุราเฉียบพลัน)': {
+    summary: 'ดื่มสุรา + พฤติกรรมเปลี่ยน + อาการทางร่างกาย ≥1 + แยกโรคอื่นแล้ว',
+    groups: [
+      G('CC', 0, ['มีประวัติดื่มสุรา', 'พฤติกรรม / อารมณ์เปลี่ยนระหว่าง-หลังดื่ม']),
+      G('PE', 1, ['พูดไม่ชัด', 'เดินเซ / ไม่ประสาน', 'ตากระตุก (nystagmus)', 'สมาธิ / ความจำบกพร่อง', 'ซึม / ไม่รู้สึกตัว']),
+      G('Lab', 0, ['แยกภาวะอื่นแล้ว (บาดเจ็บศีรษะ, น้ำตาลต่ำ)']),
+      G('Tx', 0, ['มีการรักษา'])
+    ],
+    note: 'เมาหลับโดยไม่ได้ประเมินแยกโรค → R40 ไม่ใช่ F10.0'
+  },
+  'Convulsion/Seizure/Epilepsy (อาการชัก/โรคลมชัก)': {
+    summary: 'แพทย์ระบุชนิดการชักชัดเจน + ได้ยากันชัก/แก้สาเหตุ',
+    groups: [
+      G('CC', 0, ['แพทย์ระบุชนิด (ครั้งแรก / partial / generalized / provoked / epilepsy / status)']),
+      G('Lab', 1, ['ตรวจ glucose / electrolyte', 'CT / MRI / EEG ตามข้อบ่งชี้']),
+      G('Tx', 1, ['ยากันชัก', 'แก้สาเหตุกระตุ้น'])
+    ],
+    note: 'ครั้งแรกไม่ระบุ → R56.8 · Provoked → G40.5 · Status → G41.-'
+  },
+  'Transient Ischaemic Attack (TIA) - สมองขาดเลือดชั่วคราว': {
+    summary: 'อาการทางประสาทหายใน 24 ชม. + ภาพสมองไม่พบ infarction',
+    groups: [
+      G('CC', 0, ['อาการทางประสาทเฉพาะที่ หายภายใน 24 ชม.']),
+      G('Lab', 0, ['CT / MRI ไม่พบ infarction']),
+      G('Tx', 1, ['Antiplatelet', 'คุมปัจจัยเสี่ยง (BP / DM / ไขมัน)'])
+    ],
+    note: 'ควรระบุชนิด: anterior / posterior circulation / amaurosis fugax / TGA'
+  },
+  'Atrial Fibrillation / Atrial Flutter (หัวใจเต้นผิดจังหวะ AF)': {
+    summary: 'มีหลักฐาน AF + ได้รักษา AF',
+    groups: [
+      G('Lab', 1, ['EKG ครั้งนี้พบ AF', 'มีประวัติ AF เดิม'], 'หลักฐาน AF'),
+      G('Tx', 1, ['Rate control (digoxin / beta-blocker)', 'Rhythm control (amiodarone)', 'Anticoagulant'], 'ต้องได้รักษา AF')
+    ],
+    note: 'ประวัติ AF แต่ครั้งนี้ไม่พบ → I48.0 · Persistent → I48.1 · Chronic → I48.2 · ไม่ระบุ → I48.9'
+  },
+  'Cardiac Arrest (ภาวะหัวใจหยุดเต้น)': {
+    summary: 'หมดสติ ไม่มีชีพจร + ทำ CPR + ระบุผล',
+    groups: [
+      G('CC', 0, ['หมดสติ ไม่หายใจ คลำชีพจรไม่ได้', 'ทำ CPR']),
+      G('Tx', 0, ['ระบุผล CPR (สำเร็จ / ไม่สำเร็จ)'])
+    ],
+    note: 'ทราบสาเหตุ → ให้รหัสสาเหตุ (เพิ่ม I46.0 ได้ถ้า CPR สำเร็จ) · CPR สำเร็จ → I46.0 · ไม่สำเร็จ → I46.9'
+  },
+  'Deep Vein Thrombosis / Venous Thrombosis (ลิ่มเลือดในหลอดเลือดดำ)': {
+    summary: 'ขาบวม + Doppler ยืนยัน + ได้ยาต้านการแข็งตัวของเลือด',
+    groups: [
+      G('CC', 1, ['ขาบวมข้างเดียว', 'ปวด / แดง / ร้อน']),
+      G('Lab', 0, ['Doppler U/S ยืนยัน']),
+      G('Tx', 0, ['ได้ยาต้านการแข็งตัวของเลือด'])
+    ],
+    note: 'Phlebitis จากให้น้ำเกลือ → T80.1 + Y62.1 ไม่ใช่ I80'
+  },
+  'Snake Bite (งูกัด)': {
+    summary: 'ถูกงูกัด + อาการพิษ + ตรวจการแข็งตัวของเลือด',
+    groups: [
+      G('CC', 0, ['ประวัติถูกงูกัด (ระบุชนิดถ้าทราบ)']),
+      G('PE', 1, ['แผลเขี้ยว / บวม / ปวด', 'เลือดออก / จ้ำเลือด', 'หนังตาตก / กลืนลำบาก / หายใจลำบาก']),
+      G('Lab', 1, ['20WBCT', 'Coagulogram / CBC']),
+      G('Tx', 1, ['Antivenom', 'Monitor การแข็งตัวของเลือด / การหายใจ', 'Tetanus prophylaxis'])
+    ],
+    note: 'งูมีพิษ → Toxic effect of snake venom เป็น PDx + external cause · งูไม่มีพิษ → Puncture wound'
+  },
+  'Wound Infection / Post-traumatic Wound Infection (แผลติดเชื้อ)': {
+    summary: 'ระบุชนิดแผล + แผลอักเสบ + ได้รักษา',
+    groups: [
+      G('CC', 0, ['ระบุชนิดแผล (บาดเจ็บ / ผ่าตัด / เบาหวาน / กดทับ)']),
+      G('PE', 0, ['แผลบวมแดง / มีหนอง']),
+      G('Tx', 1, ['ยาปฏิชีวนะ', 'ทำแผล / debridement'])
+    ],
+    note: '"Diabetic foot" ต้องมีบันทึกตรวจ neuro + vascular จึงสรุปเป็น DM complication · debridement ไม่มีรายละเอียด → ได้แค่ 86.28'
+  },
+  'Acute Appendicitis (ไส้ติ่งอักเสบเฉียบพลัน)': {
+    summary: 'อาการ + กดเจ็บ RLQ + ผ่าตัด (หรือมีภาพถ่ายยืนยันถ้าไม่ผ่าตัด)',
+    groups: [
+      G('CC', 1, ['ปวดรอบสะดือแล้วย้ายไปท้องน้อยขวา', 'เบื่ออาหาร / คลื่นไส้ / ไข้']),
+      G('PE', 0, ['กดเจ็บท้องน้อยขวา (RLQ)']),
+      G('Tx', 1, ['ได้ผ่าตัด', 'ไม่ผ่าตัด: มีเหตุผล + CT / US ยืนยัน'])
+    ],
+    note: 'ไม่เข้าเกณฑ์ → R10.- · ระบุ peritonitis ทั่วไป → K35.2 · เฉพาะที่ → K35.3'
+  },
+  'Pulmonary Tuberculosis (วัณโรคปอด)': {
+    summary: 'อาการ + ระบุวิธียืนยัน (เสมหะ / เพาะเชื้อ / ชิ้นเนื้อ / clinical) + ได้ยา TB',
+    groups: [
+      G('CC', 1, ['ไอ >2 สัปดาห์', 'ไข้ต่ำ / เหงื่อออกกลางคืน / น้ำหนักลด', 'ไอเป็นเลือด']),
+      G('Lab', 1, ['AFB / PCR บวก (A15.0)', 'เพาะเชื้อขึ้น (A15.1)', 'ชิ้นเนื้อยืนยัน (A15.2)', 'Clinical + CXR, ตรวจไม่พบเชื้อ (A16.0)', 'Clinical + CXR, ไม่ได้ตรวจเสมหะ (A16.1)'], 'วิธียืนยัน'),
+      G('Tx', 0, ['ได้ยารักษาวัณโรค'])
+    ],
+    note: 'Old TB → สรุปเป็นโรคร่วมเฉพาะมีอาการปัจจุบันจากรอยโรคเดิม'
+  },
+  'Poisoning / Adverse Effect of Drugs (พิษจากยา/ผลไม่พึงประสงค์)': {
+    summary: 'แยก Poisoning / Adverse effect + ระบุชื่อยา + เจตนา',
+    groups: [
+      G('CC', 0, ['แยกชัด: Poisoning (ผิดขนาด / ตั้งใจ) หรือ Adverse effect (ใช้ถูกแต่เกิดผลข้างเคียง)', 'ระบุชื่อยา / สาร']),
+      G('PE', 0, ['Poisoning: ระบุเจตนา (อุบัติเหตุ / ทำร้ายตนเอง / ถูกทำร้าย)']),
+      G('Tx', 1, ['ล้างท้อง / Activated charcoal', 'Antidote', 'Supportive care'])
+    ],
+    note: 'Warfarin กินตามสั่ง + เลือดออก → D68.3 · ไม่มีเลือดออก admit เฝ้าระวัง → D68.4 · กินเกินขนาด + เลือดออก → T45.5'
+  },
+  'Gangrene (เนื้อตายเน่า)': {
+    summary: 'เนื้อตายจากเลือดไปเลี้ยงไม่พอ + หาสาเหตุ',
+    groups: [
+      G('PE', 0, ['พบเนื้อตายเน่า']),
+      G('Lab', 1, ['คลำชีพจร / ABI / Doppler']),
+      G('Tx', 1, ['Debridement / ตัดอวัยวะ', 'ส่งต่อ'])
+    ],
+    note: 'ระบุสาเหตุได้ (เช่น atherosclerosis, gas gangrene) → ใช้รหัสโรคนั้น ไม่ใช่ R02'
+  },
+  'Syncope and Collapse (เป็นลมหมดสติชั่วคราว)': {
+    summary: 'หมดสติชั่วคราว ฟื้นเองสมบูรณ์ + ตรวจหาสาเหตุ',
+    groups: [
+      G('CC', 0, ['หมดสติช่วงสั้น ฟื้นเองสมบูรณ์']),
+      G('Lab', 1, ['EKG', 'วัด BP ท่านอน-ยืน', 'Glucose / electrolyte'])
+    ],
+    note: 'ไม่ทราบสาเหตุ → R55 · Vasovagal → G90.8 · Orthostatic → I95.1 · จากหัวใจ → รหัสโรคหัวใจ'
+  },
+  'Febrile Convulsion (ชักจากไข้สูงในเด็ก)': {
+    summary: 'ชัก + ไข้ + อายุ 6 เดือน-6 ปี + ไม่มีอาการติดเชื้อในสมอง',
+    groups: [
+      G('CC', 0, ['ชักร่วมกับไข้', 'อายุ 6 เดือน - 6 ปี']),
+      G('PE', 0, ['ไม่มีอาการ meningitis / encephalitis']),
+      G('Lab', 0, ['ตรวจหาสาเหตุของไข้'])
+    ],
+    note: 'ทราบสาเหตุไข้ → สาเหตุเป็น PDx, R56.0 เป็น SDx · ไม่ทราบสาเหตุไข้ → R56.0 เป็น PDx'
+  },
+  'Shock (ภาวะช็อก ทั่วไป/Cardiogenic/Hypovolemic)': {
+    summary: 'ความดันต่ำ + เลือดไปเลี้ยงไม่พอ + ระบุชนิดและสาเหตุ',
+    groups: [
+      G('PE', 1, ['MAP <60', 'BP <90/60', 'BP ลดลง >40 จากเดิม'], 'ความดัน'),
+      G('PE', 1, ['มือเท้าเย็น / เหงื่อแตก', 'HR เร็ว', 'ปัสสาวะน้อย', 'CRT ช้า', 'ซึม'], 'เลือดไปเลี้ยงไม่พอ'),
+      G('CC', 0, ['แพทย์ระบุชนิด shock และสาเหตุ']),
+      G('Tx', 1, ['IV fluid', 'Inotrope / vasopressor'])
+    ],
+    note: 'Shock ควรเป็น SDx — โรคที่ทำให้ช็อกเป็น PDx'
+  },
+  'Malignancy - หลักการให้รหัสมะเร็ง (รับ Refer มารักษาต่อเนื่อง)': {
+    summary: 'ระบุตำแหน่ง + ชนิด + มีหลักฐานยืนยัน + เหตุผลที่มาครั้งนี้',
+    groups: [
+      G('CC', 0, ['ระบุตำแหน่ง และ primary / metastasis', 'ระบุชนิดเนื้อเยื่อ (ห้ามเขียน R/O)']),
+      G('Lab', 1, ['ผลพยาธิวิทยา', 'ใบส่งตัว / บันทึกแพทย์ระบุชนิด-ตำแหน่ง-การรักษาเดิม'], 'หลักฐานยืนยัน'),
+      G('Tx', 0, ['ระบุเหตุผลที่มาครั้งนี้ (คีโม / ฉายแสง / โรคแทรก)'])
+    ],
+    note: 'มีแค่ "underlying CA" → ได้เพียง Z85 หรือรหัส D · ให้คีโมต้องมีผลพยาธิ + หลักฐานการให้ยาจริง'
+  },
+  'Malignancy Complications (ภาวะแทรกซ้อนจากมะเร็ง/เคมีบำบัด)': {
+    summary: 'ระบุภาวะแทรกซ้อน + เกิดจากตัวมะเร็งหรือจากการรักษา + ผลตรวจสนับสนุน',
+    groups: [
+      G('CC', 0, ['ระบุว่าเกิดจากตัวมะเร็ง หรือจากการรักษา (คีโม)']),
+      G('Lab', 1, ['ซีดจากมะเร็ง: normocytic + ferritin ปกติ/สูง', 'Febrile neutropenia: ANC <500 + ไข้ ≥38.3', 'ภาวะอื่น: มีผลตรวจสนับสนุน']),
+      G('Tx', 1, ['ให้เลือด', 'ยาปฏิชีวนะ broad spectrum', 'G-CSF'])
+    ],
+    note: 'ซีดจากมะเร็ง (D63.0) เป็น PDx ไม่ได้ · ซีดจากคีโม → เป็น PDx ได้, มะเร็งเป็น SDx · Febrile neutropenia → D70 + Y43.-'
+  }
+};
+
+// ---------- checklist แบบย่อ (ใช้แทนเกณฑ์ยาวเมื่อโรคมีข้อมูลใน CHECKLIST) ----------
+function groupHeader(g){
+  const n = g.items.length;
+  const need = g.min === 0 ? 'ต้องมีครบ' : (g.min >= n ? 'ต้องมีครบ' : `ติ๊กอย่างน้อย ${g.min} ข้อ`);
+  return (g.title ? g.title + ' · ' : '') + need;
+}
+function groupOk(g, checked){
+  const c = checked.filter(Boolean).length;
+  return g.min === 0 ? c === g.items.length : c >= g.min;
+}
+function getMissing(stateStore){
+  return (stateStore && stateStore._missing) ? stateStore._missing : [];
+}
+function fullCriteriaDetails(d){
+  return `<details style="margin-top:12px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:600; color:var(--teal);">ดูเกณฑ์ฉบับเต็ม</summary>${criteriaClipHtml(d)}</details>`;
+}
+function checklistPreviewHtml(d){
+  const cl = CHECKLIST[d.Disease_Name];
+  if(!cl) return criteriaClipHtml(d);
+  return `<div class="criteria-clip">
+    <div class="icd">ICD-10: ${escapeHtml(d.ICD10_Code||'-')}</div>
+    <div class="cl-summary">ต้องมี: ${escapeHtml(cl.summary)}</div>
+    ${cl.groups.map(g=>`<div class="cl-block"><div class="cl-head"><span class="cl-title">${escapeHtml(groupHeader(g))}</span></div>
+      <ul style="margin:2px 0 0; padding-left:18px; font-size:13.5px; line-height:1.6;">${g.items.map(i=>`<li>${escapeHtml(i)}</li>`).join('')}</ul></div>`).join('')}
+    ${cl.note ? `<div class="cl-note">⚠️ ${escapeHtml(cl.note)}</div>` : ''}
+  </div>`;
+}
+function renderSimpleChecklist(wrap, disease, statusObj, onUpdate, stateStore){
+  const cl = CHECKLIST[disease.Disease_Name];
+  const hasLab = !!LAB_THRESHOLD_RULES[disease.Disease_Name];
+  wrap.innerHTML = `<div class="criteria-clip">
+      <div class="icd">ICD-10: ${escapeHtml(disease.ICD10_Code||'-')}</div>
+      <div class="cl-summary">ต้องมี: ${escapeHtml(cl.summary)}</div>
+      ${hasLab ? '<div data-role="labhelper"></div>' : ''}
+      <div data-role="groups"></div>
+      ${cl.note ? `<div class="cl-note">⚠️ ${escapeHtml(cl.note)}</div>` : ''}
+    </div>${fullCriteriaDetails(disease)}`;
+  if(hasLab) renderLabCheckerInto(wrap.querySelector('[data-role="labhelper"]'), disease.Disease_Name, null);
+
+  if(!stateStore.groups || stateStore.groups.length !== cl.groups.length){
+    stateStore.groups = cl.groups.map(g=>g.items.map(()=>false));
+  }
+  const groupsEl = wrap.querySelector('[data-role="groups"]');
+  function recompute(){
+    ['CC','PE','Lab','Tx'].forEach(cat=>{
+      const idx = cl.groups.map((g,i)=>g.cat===cat?i:-1).filter(i=>i>-1);
+      statusObj[cat] = !idx.length ? 'ไม่เกี่ยวข้อง'
+        : (idx.every(i=>groupOk(cl.groups[i], stateStore.groups[i])) ? 'ครบถ้วน' : 'ไม่ครบ');
+    });
+    stateStore._missing = cl.groups
+      .map((g,i)=>groupOk(g, stateStore.groups[i]) ? null
+        : (g.min===0 ? g.items.filter((_,j)=>!stateStore.groups[i][j]).join(', ') : groupHeader(g)))
+      .filter(Boolean);
+  }
+  function render(){
+    groupsEl.innerHTML = cl.groups.map((g,gi)=>{
+      const checked = stateStore.groups[gi];
+      const ok = groupOk(g, checked);
+      return `<div class="cl-block">
+        <div class="cl-head">
+          <span class="cl-title">${escapeHtml(groupHeader(g))}</span>
+          <span class="cl-count ${ok?'done':''}">${ok?'✓ ผ่าน':checked.filter(Boolean).length+'/'+(g.min||g.items.length)}</span>
+        </div>
+        ${g.items.map((t,j)=>`<label class="cl-item ${checked[j]?'checked':''}">
+          <input type="checkbox" data-g="${gi}" data-i="${j}" ${checked[j]?'checked':''}><span>${escapeHtml(t)}</span></label>`).join('')}
+      </div>`;
+    }).join('');
+    groupsEl.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', e=>{
+        stateStore.groups[+e.target.dataset.g][+e.target.dataset.i] = e.target.checked;
+        recompute(); render(); onUpdate();
+      });
+    });
+  }
+  recompute(); render();
+}
+
 async function loadDiseases(){
   try{
     DISEASES = await api('getDiseases');
   }catch(e){ toast(e.message, true); DISEASES = []; }
+  const seenNames = {};
+  const rawCount = DISEASES.length;
+  DISEASES = DISEASES.filter(d=>{
+    const n = String(d.Disease_Name||'').trim();
+    if(!n || seenNames[n]) return false;
+    seenNames[n] = true; return true;
+  });
+  DUP_COUNT = rawCount - DISEASES.length;
   DISEASES.sort((a,b)=>a.Disease_Name.localeCompare(b.Disease_Name, 'en'));
   document.getElementById('diseaseCount').textContent = DISEASES.length + ' รายการ';
   ssPdx.refresh(); ssSdx.refresh();
   renderDiseaseList();
   renderDiseaseFilter();
+  renderLookup();
 }
 
 function escapeHtml(s){
@@ -845,6 +1342,7 @@ function parseCriteriaItems(text){
 
 function renderChecklistWrap(wrap, disease, statusObj, onUpdate, stateStore){
   stateStore = stateStore || {};
+  if(CHECKLIST[disease.Disease_Name]) return renderSimpleChecklist(wrap, disease, statusObj, onUpdate, stateStore);
   const categories = [
     { key:'CC', label:'Chief Complaint (CC)', text: disease.Criteria_CC },
     { key:'PE', label:'Physical Exam (PE)', text: disease.Criteria_PE },
@@ -1015,7 +1513,7 @@ const ssSdx = createSearchableSelect(
     document.getElementById('sdxPreview').innerHTML = `
       <div style="margin-top:12px; padding:2px 2px 0; border-top:1px dashed var(--line);">
         <div style="font-size:12px; font-weight:700; color:#7A8286; margin:10px 0 4px;">เกณฑ์ของโรคนี้ (ดูก่อนเพิ่ม)</div>
-        ${criteriaClipHtml(d)}
+        ${checklistPreviewHtml(d)}
       </div>`;
   }
 );
@@ -1187,7 +1685,7 @@ document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
       Disease_ID: pdxId, Disease_Name: pdxDisease ? pdxDisease.Disease_Name : '',
       Status_CC: pdxStatus.CC, Status_PE: pdxStatus.PE, Status_Lab: pdxStatus.Lab, Status_Tx: pdxStatus.Tx,
       Audit_Result: pdxEffective==='pass' ? 'ผ่าน (Complete)' : 'ส่งคืนแก้ไข (Incomplete)',
-      Comment_Detail: '',
+      Comment_Detail: getMissing(pdxChecklistState).length ? 'ขาด: ' + getMissing(pdxChecklistState).join(' | ') : '',
       Dx_Documented:'', Dx_Timing:'เป็นโรคหลัก (Principal)', Severity_Evidence:'',
       Coding_Risk:'', Coding_Risk_Reason:'',
       Encounter_ID: encounterId, Dx_Role: 'Pdx'
@@ -1202,7 +1700,7 @@ document.getElementById('btnSaveAudit').addEventListener('click', async ()=>{
         Disease_ID: entry.diseaseId, Disease_Name: d ? d.Disease_Name : '',
         Status_CC: entry.status.CC, Status_PE: entry.status.PE, Status_Lab: entry.status.Lab, Status_Tx: entry.status.Tx,
         Audit_Result: effective==='pass' ? 'ผ่าน (Complete)' : 'ส่งคืนแก้ไข (Incomplete)',
-        Comment_Detail: entry.comment,
+        Comment_Detail: [getMissing(entry.checklistState).length ? 'ขาด: ' + getMissing(entry.checklistState).join(' | ') : '', entry.comment].filter(Boolean).join('\n'),
         Dx_Documented: entry.evidence.dxdoc, Dx_Timing: entry.evidence.dxtiming,
         Severity_Evidence: entry.evidence.severity.join(', '),
         Coding_Risk: risk.risk, Coding_Risk_Reason: risk.reason,
@@ -1265,6 +1763,21 @@ document.getElementById('btnSaveDisease').addEventListener('click', async ()=>{
 function renderDiseaseList(){
   const wrap = document.getElementById('diseaseList');
   document.getElementById('diseaseListCount').textContent = DISEASES.length + ' รายการ';
+  document.getElementById('dupBanner').innerHTML = DUP_COUNT ? `
+    <div class="config-banner" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+      <span>พบโรคชื่อซ้ำในชีท <b>${DUP_COUNT}</b> แถว (ซ่อนไว้แล้วในหน้าเว็บ)</span>
+      <button class="btn-secondary" id="btnDedupe" style="white-space:nowrap;">ลบโรคซ้ำทั้งหมด</button>
+    </div>` : '';
+  const dd = document.getElementById('btnDedupe');
+  if(dd) dd.addEventListener('click', async ()=>{
+    if(!confirm(`ลบแถวโรคที่ชื่อซ้ำ ${DUP_COUNT} แถวออกจากชีท? (เก็บไว้ชื่อละ 1 แถว)`)) return;
+    dd.disabled = true; dd.textContent = 'กำลังลบ...';
+    try{
+      const r = await api('removeDuplicateDiseases');
+      toast('ลบโรคซ้ำแล้ว ' + r.removed + ' แถว');
+      await loadDiseases();
+    }catch(e){ toast(e.message, true); dd.disabled = false; dd.textContent = 'ลบโรคซ้ำทั้งหมด'; }
+  });
   if(!DISEASES.length){
     wrap.innerHTML = '<div class="empty"><div class="big">🩺</div>ยังไม่มีเกณฑ์โรคในระบบ</div>';
     return;
@@ -1723,6 +2236,42 @@ async function loadPrinciples(){
     </div>
   `).join('');
 }
+
+
+// ---------- ค้นหาโรค: ใส่รหัสอะไร + ต้องมีอะไร ----------
+function normSearch(t){ return String(t||'').toLowerCase().replace(/[\s\-\/().]/g,''); }
+function renderLookup(){
+  const input = document.getElementById('lookupInput');
+  const out = document.getElementById('lookupResults');
+  if(!input || !out) return;
+  const q = normSearch(input.value);
+  if(!q){
+    out.innerHTML = '<div style="font-size:12.5px; color:#9AA2A5; margin-top:8px;">พิมพ์เพื่อค้นหา — ผลจะบอกรหัส ICD-10 และสิ่งที่ต้องมีในชาร์จ</div>';
+    return;
+  }
+  const hits = DISEASES.filter(d=>{
+    const cl = CHECKLIST[d.Disease_Name];
+    const hay = normSearch(d.Disease_Name) + '|' + normSearch(DISEASE_ABBR[d.Disease_Name]) + '|' + normSearch(d.ICD10_Code) + '|' + normSearch(cl ? cl.note : '');
+    return hay.includes(q);
+  }).slice(0, 8);
+  if(!hits.length){
+    out.innerHTML = '<div class="empty" style="padding:20px;"><div class="big">🤔</div>ไม่พบโรคที่ตรงกัน</div>';
+    return;
+  }
+  out.innerHTML = hits.map(d=>{
+    const abbr = DISEASE_ABBR[d.Disease_Name];
+    return `<div class="lookup-card">
+      <div class="lookup-head">
+        <div>
+          <div class="lookup-name">${abbr ? `<span class="ss-abbr" style="font-size:11px; font-weight:700; color:var(--teal-dark); background:var(--teal-light); border-radius:5px; padding:1px 6px; margin-right:6px;">${escapeHtml(abbr)}</span>` : ''}${escapeHtml(d.Disease_Name)}</div>
+        </div>
+        <div class="lookup-code mono">${escapeHtml(d.ICD10_Code || '-')}</div>
+      </div>
+      ${checklistPreviewHtml(d)}
+    </div>`;
+  }).join('');
+}
+document.getElementById('lookupInput').addEventListener('input', renderLookup);
 
 // ---------- init ----------
 loadDiseases();
